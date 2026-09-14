@@ -110,6 +110,16 @@ with patch.object(bc, "send_message", fake_send_message), \
     updated.clear()
     bc.handle_end_session(123, "gil612", "")
     check("handle_end_session: exactly one update_rows call", len(updated) == 1, f"-> {updated}")
+    # הודעת הסיום היא הנקודה היחידה שבה המשתמש רואה את מדד החשיפה שלו,
+    # ולכן גם הרגע הטבעי להפנות אותו לאזור האישי (2026-09-14). הפקודה
+    # חייבת לשבת בשורה משלה — בטלגרם היא לינק לחיץ, וטקסט שנדבק אליה
+    # באותה שורה נבלע בתוכו.
+    completion = sent_messages[0] if sent_messages else ""
+    check(
+        "handle_end_session: completion message points the user to /dashboard, on its own line",
+        "/dashboard" in [line.strip() for line in completion.split("\n")],
+        f"-> {sent_messages}",
+    )
     if updated:
         _, _, patch_dict = updated[0]
         check("handle_end_session: uv_index replaced with refreshed weighted-average value", patch_dict.get("uv_index") == REFRESHED_UV, f"-> {patch_dict}")
@@ -199,7 +209,18 @@ with patch.object(bc, "send_message", fake_send_message), \
     sent_messages.clear()
     updated.clear()
     bc.handle_end_session(123, "gil612", "abc")
-    check("handle_end_session: non-numeric SPF -> usage message, no update", len(updated) == 0 and "שימוש" in sent_messages[0], f"-> {sent_messages}")
+    # ההודעה לא חייבת להכיל את המילה "שימוש" — היא חייבת להראות למשתמש
+    # את שתי הצורות התקינות, כל אחת בשורה משלה (כמו שאר הודעות הבוט
+    # שמציגות פקודה). "/end_session <מספר>" הוא בדיוק מה שהמשתמש פספס.
+    usage = sent_messages[0] if sent_messages else ""
+    usage_lines = [line.strip() for line in usage.split("\n")]
+    check(
+        "handle_end_session: non-numeric SPF -> usage message, no update",
+        len(updated) == 0
+        and "/end_session" in usage_lines
+        and any(line.startswith("/end_session ") and line.split()[-1].isdigit() for line in usage_lines),
+        f"-> {sent_messages}",
+    )
 
 # ---------------------------------------------------------------------
 # 7) COMMAND_HANDLERS: /end_session רשום נכון

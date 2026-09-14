@@ -842,7 +842,11 @@ def _can_start_session(chat_id: int, username: str, lang: str = i18n.DEFAULT_LAN
         {"telegram_username": f"eq.{username}", "end_time": "is.null"},
     )
     if open_sessions:
-        send_message(chat_id, "כבר יש לך session פתוח. שלחו /end_session קודם.")
+        send_message(
+            chat_id,
+            "כבר יש לך session פתוח — צריך לסגור אותו קודם:\n"
+            "/end_session",
+        )
         return False
 
     return True
@@ -1421,8 +1425,11 @@ def _begin_session(
     location_label = f"{city_name}, {country}" if country else city_name
     send_message(
         chat_id,
-        f"התחלת session ב{location_label} (UV נוכחי: {uv_index:.1f}). "
-        "כשתסיימו, שלחו /end_session (או /end_session <SPF> אם השתמשתם בקרם הגנה).",
+        f"התחלת session ב{location_label} (UV נוכחי: {uv_index:.1f}).\n\n"
+        "כשתסיימו, שלחו\n"
+        "/end_session\n\n"
+        "— או עם קרם הגנה (מספר ה-SPF):\n"
+        "/end_session 50",
         reply_markup={"remove_keyboard": True} if clear_keyboard else None,
     )
     logger.info("Started session for @%s in %s (UV=%s)", username, city_name, uv_index)
@@ -1512,7 +1519,13 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
     spf = None
     if args:
         if not args.isdigit():
-            send_message(chat_id, "שימוש: /end_session או /end_session <SPF כמספר, למשל 30>")
+            send_message(
+                chat_id,
+                "בלי קרם הגנה, שלחו\n"
+                "/end_session\n\n"
+                "— או עם קרם הגנה (מספר ה-SPF):\n"
+                "/end_session 30",
+            )
             return
         spf = int(args)
 
@@ -1566,7 +1579,9 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
     send_message(
         chat_id,
         f"session הסתיים — {round(duration_minutes)} דקות ב{session['city']}. "
-        f"מדד חשיפה: {score}%.",
+        f"מדד חשיפה: {score}%.\n\n"
+        "לראות את הנתונים באזור האישי — לחצו\n"
+        "/dashboard",
     )
     logger.info("Ended session id=%s for @%s: score=%s", session["id"], username, score)
 

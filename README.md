@@ -94,7 +94,7 @@ decisions — see [`CLAUDE.md`](./CLAUDE.md).
 Requirements: Python 3.12+, a Telegram account, a free Gemini API key.
 
 ```powershell
-git clone https://github.com/gil612/sunsafe.git
+git clone https://github.com/sunsafe-app/sunsafe.git
 cd sunsafe
 
 python -m venv venv
