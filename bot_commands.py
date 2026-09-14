@@ -17,7 +17,10 @@ update_rows/upsert_row) — REST ישיר מול PostgREST דרך httpx, בלי
 SDK נוסף, עקבי עם שאר הקוד.
 """
 
+import functools
+import inspect
 import io
+import json
 import logging
 import os
 import re
@@ -43,6 +46,8 @@ from geo_uv_core import (
     GEOCODING_URL,
     NOMINATIM_SEARCH_URL,
 )
+import i18n
+from i18n import resolve_language, t
 from message_gatekeeper import classify_message
 # ניתוב הודעות-טקסט חופשיות (לא פקודה מוכרת, אבל לא NOISE) ל-Agent Loop
 # דרך MCP — אותו run() בדיוק ש-send_uv_report.py כבר משתמש בו, ראו
@@ -198,21 +203,58 @@ def send_message(chat_id: int, text: str, reply_markup: dict | None = None) -> N
     _mirror_outgoing_to_admin(chat_id, text)
 
 
-def send_photo(chat_id: int, photo_bytes: bytes, caption: str | None = None) -> None:
+def send_photo(
+    chat_id: int,
+    photo_bytes: bytes,
+    caption: str | None = None,
+    reply_markup: dict | None = None,
+) -> None:
     """
     שולח תמונה בודדת ל-Telegram (sendPhoto, multipart/form-data — בשונה
     מ-send_message למעלה שהוא JSON טהור). לא היה בשימוש עד כה בפרויקט
     (רק sendMessage); נדרש עבור תרשים תחזית ה-UV (send_uv_forecast_chart).
+
+    reply_markup נוסף ב-2026-09-12 עבור בורר סוג-העור בלחיצה (ראו
+    _skin_type_keyboard): הכפתורים צריכים לשבת מתחת לתמונת הסולם עצמה.
+    ב-multipart, בשונה מבקשת JSON, טלגרם מצפה ל-reply_markup כמחרוזת
+    JSON בתוך השדה — לא כאובייקט מקונן.
     """
+    data = {"chat_id": chat_id}
+    if caption:
+        data["caption"] = caption
+    if reply_markup is not None:
+        data["reply_markup"] = json.dumps(reply_markup)
+
     with httpx.Client() as client:
         response = client.post(
             f"{TELEGRAM_API}/sendPhoto",
-            data={"chat_id": chat_id, **({"caption": caption} if caption else {})},
+            data=data,
             files={"photo": ("uv_forecast.png", photo_bytes, "image/png")},
             timeout=15.0,
         )
         response.raise_for_status()
     _mirror_outgoing_photo_to_admin(chat_id, photo_bytes, caption)
+
+
+def answer_callback_query(callback_query_id: str, text: str | None = None) -> None:
+    """
+    סוגר את "ספינר ההמתנה" שטלגרם מציג על כפתור inline אחרי לחיצה.
+    חובה לקרוא לזה על *כל* callback_query — אחרת הכפתור נראה תקוע
+    למשתמש גם אם הפעולה עצמה הצליחה מזמן.
+
+    best-effort: כשל כאן לא אמור להפיל את הטיפול בלחיצה עצמה (הנתון
+    כבר נשמר), אז רק נרשם ללוג.
+    """
+    try:
+        with httpx.Client() as client:
+            response = client.post(
+                f"{TELEGRAM_API}/answerCallbackQuery",
+                json={"callback_query_id": callback_query_id, **({"text": text} if text else {})},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+    except Exception as e:
+        logger.warning("answerCallbackQuery failed (id=%s): %s", callback_query_id, e)
 
 
 # ---------------------------------------------------------------------
@@ -341,13 +383,19 @@ def _notify_admin_token_usage(feature: str, username: str, usage: dict | None) -
 # ---------------------------------------------------------------------
 # תמונה נכנסת — הצעת סוג עור (Fitzpatrick) בלבד, לא כתיבה ל-DB
 # ---------------------------------------------------------------------
-def handle_skin_type_photo(chat_id: int, username: str, photo_file_id: str) -> None:
+def handle_skin_type_photo(
+    chat_id: int, username: str, photo_file_id: str, lang: str = i18n.DEFAULT_LANGUAGE
+) -> None:
     """
     מוריד תמונה שנשלחה לבוט, שולח אותה ל-Gemini להערכת סוג עור (הצעה
     בלבד — ראו skin_type_classifier.py ו-docs/2026-08-26-skin-type-photo
-    -design.md), ומבקש מהמשתמש לאשר/לתקן דרך /set_skin_type הקיים.
+    -design.md), ומבקש מהמשתמש לאשר/לתקן.
     הפונקציה הזו **לא** כותבת ל-users בעצמה — בכוונה, כדי שערך בטיחותי
     (הבסיס ל-exposure_score) תמיד יעבור אישור אנושי מפורש.
+
+    מ-2026-09-12 האישור והתיקון הם בלחיצה ולא בהקלדת /set_skin_type:
+    מי שהגיע לכאן עשה זאת בדיוק *כי* הוא לא בטוח באיזה סוג הוא, ולבקש
+    ממנו בנקודה הזו להקליד פקודה עם מספר היה הדבר הפחות מתאים.
     """
     with httpx.Client() as client:
         photo_bytes = download_telegram_photo(client, photo_file_id)
@@ -356,11 +404,7 @@ def handle_skin_type_photo(chat_id: int, username: str, photo_file_id: str) -> N
         raw = classify_skin_type_from_image(photo_bytes)
     except Exception as e:
         logger.warning("classify_skin_type_from_image failed for @%s: %s", username, e)
-        send_message(
-            chat_id,
-            "לא הצלחתי לנתח את התמונה כרגע. נסו שוב, או השתמשו ב-/set_skin_type "
-            "<1-6> ידנית.",
-        )
+        send_message(chat_id, t("photo_analysis_failed", lang), reply_markup=_skin_type_keyboard(lang))
         return
 
     _notify_admin_token_usage("skin_type", username, raw.pop("_usage", None))
@@ -368,19 +412,21 @@ def handle_skin_type_photo(chat_id: int, username: str, photo_file_id: str) -> N
     if not result["ok"]:
         send_message(
             chat_id,
-            f"לא הצלחתי להעריך סוג עור מהתמונה הזו ({result['reason']}). "
-            "נסו תמונה ברורה יותר של העור, או השתמשו ב-/set_skin_type <1-6> ידנית.",
+            t("photo_rejected", lang, reason=result["reason"]),
+            reply_markup=_skin_type_keyboard(lang),
         )
         logger.info("Photo skin-type classification rejected for @%s: %s", username, result)
         return
 
     send_message(
         chat_id,
-        f"לפי התמונה, נראה כמו סוג עור ~{result['skin_type']} (Fitzpatrick, "
-        f"רמת ביטחון: {result['confidence']}). {result['reasoning']}\n\n"
-        "שימו לב: זו הערכה חזותית משוערת בלבד, לא שאלון רשמי המבוסס על "
-        f"היסטוריית שרפות-שמש — לאישור שלחו /set_skin_type {result['skin_type']}, "
-        "או מספר אחר אם זה לא מדויק.",
+        t(
+            "photo_suggestion", lang,
+            skin_type=result["skin_type"],
+            reasoning=result["reasoning"],
+            confidence=result["confidence"],
+        ),
+        reply_markup=_skin_type_confirm_keyboard(result["skin_type"], lang),
     )
     logger.info("Photo skin-type suggestion for @%s: %s", username, result)
 
@@ -572,42 +618,109 @@ def _load_fitzpatrick_scale_image() -> bytes | None:
 # ל-/set_skin_type הנכון. זו נקודת הכניסה הראשונה של כל משתמש חדש —
 # הכי חשוב שלא תהיה שתיקה.
 # ---------------------------------------------------------------------
-def handle_start(chat_id: int, username: str, args: str) -> None:
-    send_message(
-        chat_id,
-        "☀️ ברוכים הבאים ל-SunSafe — עוזר הגנה מהשמש!\n\n"
-        "עוקב אחרי חשיפה שלכם ל-UV לאורך היום ומזכיר מתי להתגונן.\n\n"
-        "כדי להתחיל, קודם כל בואו נקבע את סוג העור שלכם — שולח עכשיו "
-        "תמונת עזר (סולם Fitzpatrick) 👇",
-    )
+# ---------------------------------------------------------------------
+# בורר סוג העור — כפתורים, לא הקלדה
+# ---------------------------------------------------------------------
+# נוסף 2026-09-12 בעקבות ההערה מהפגישה ("Focus on making it as easy as
+# possible for the user, so someone with not much technical ability can
+# use it"): המכשול הראשון של כל משתמש חדש היה להקליד מספר בין 1 ל-6 —
+# פעולה שדורשת להבין מה זה סולם Fitzpatrick *וגם* להקליד. עכשיו זו
+# לחיצה אחת.
+#
+# התוויות מיועדות לעמוד בפני עצמן בלי התמונה: מי שמסתכל רק על הכפתורים
+# מקבל תיאור מילולי של הגוון ולא רק מספר.
+#
+# ספרות רגילות ולא רומיות (תוקן 2026-09-12, מיד אחרי הגרסה הראשונה):
+# סולם Fitzpatrick נכתב מקורית ב-I-VI, וגם תמונת העזר מציגה כך — אבל
+# ספרות רומיות לא מובנות לכולם, וזה בדיוק המכשול שניסינו להסיר כאן.
+# 1-6 גם עקבי עם כל שאר השפה של הבוט ועם הערך שנשמר ב-DB.
+#
+# מ-2026-09-14 התוויות עצמן מגיעות מ-i18n (עברית/אנגלית) — ראו
+# i18n.skin_type_label. הקבוע הזה נשאר לשימושים שאין להם הקשר שפה.
+SKIN_TYPE_LABELS = {n: i18n.skin_type_label(n) for n in range(1, 7)}
 
+# ה-prefix ב-callback_data מאפשר להוסיף בעתיד סוגי כפתורים נוספים בלי
+# להתנגש (ראו handle_callback_query). טלגרם מגביל את callback_data
+# ל-64 בייטים — "skin:3" רחוק מזה.
+SKIN_TYPE_CALLBACK_PREFIX = "skin:"
+# שני suffix-ים שאינם מספר: בקשה לצלם את היד, וחזרה לבורר אחרי הצעה.
+SKIN_CALLBACK_PHOTO = "photo"
+SKIN_CALLBACK_AGAIN = "again"
+
+
+def _skin_type_keyboard(lang: str = i18n.DEFAULT_LANGUAGE) -> dict:
+    """
+    שש כפתורי סוג-עור, שניים בשורה (קריא גם במסך צר), ומתחתיהם שורה
+    שלמה למי שלא בטוח — צילום היד.
+
+    כפתור הצילום נוסף 2026-09-12: גם עם התמונה והתיאורים המילוליים,
+    השאלה "איזה מהשישה אני?" לא טריוויאלית, וזה בדיוק המקום שבו משתמש
+    חדש נתקע. טלגרם לא מאפשר כפתור שפותח מצלמה (יש request_location
+    ו-request_contact, אין request_photo), אז הכפתור שולח הסבר קצר
+    והתמונה הבאה מסווגת ממילא — ראו handle_skin_type_photo, שכבר עשה
+    את זה מאז 2026-08-26, פשוט בלי שאף אחד ידע שזה קיים.
+    """
+    buttons = [
+        {
+            "text": i18n.skin_type_label(n, lang),
+            "callback_data": f"{SKIN_TYPE_CALLBACK_PREFIX}{n}",
+        }
+        for n in range(1, 7)
+    ]
+    rows = [buttons[i:i + 2] for i in range(0, 6, 2)]
+    rows.append([{
+        "text": t("skin_photo_button", lang),
+        "callback_data": f"{SKIN_TYPE_CALLBACK_PREFIX}{SKIN_CALLBACK_PHOTO}",
+    }])
+    return {"inline_keyboard": rows}
+
+
+def _skin_type_confirm_keyboard(suggested: int, lang: str = i18n.DEFAULT_LANGUAGE) -> dict:
+    """
+    אחרי הצעה מתמונה: אישור בלחיצה, או חזרה לבורר המלא.
+    מחליף את "לאישור שלחו /set_skin_type 3" שהיה כאן קודם — הקלדת
+    פקודה בדיוק בנקודה שבה המשתמש כבר הודה שהוא לא בטוח.
+    """
+    return {
+        "inline_keyboard": [
+            [{
+                "text": t("photo_confirm_button", lang, label=i18n.skin_type_label(suggested, lang)),
+                "callback_data": f"{SKIN_TYPE_CALLBACK_PREFIX}{suggested}",
+            }],
+            [{
+                "text": t("photo_choose_other_button", lang),
+                "callback_data": f"{SKIN_TYPE_CALLBACK_PREFIX}{SKIN_CALLBACK_AGAIN}",
+            }],
+        ]
+    }
+
+
+def handle_start(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+    """
+    הודעת פתיחה. מ-2026-09-12 מקוצרת לשתי הודעות בלבד (ברכה + תמונה עם
+    כפתורים) במקום שלוש: ההודעה השלישית פירטה את כל הפקודות עוד לפני
+    שהמשתמש בחר סוג עור, כלומר ביקשה ממנו לזכור ארבע פקודות בזמן שהוא
+    עדיין לא עשה כלום. במקומה, אישור בחירת סוג העור מציע את הצעד הבא
+    היחיד הרלוונטי — וגם הוא כפתור (ראו _save_skin_type).
+
+    מ-2026-09-14 דו-לשוני (ראו i18n.py): lang מגיע מ-language_code של
+    ההודעה הנכנסת דרך ה-dispatch ב-handle_update.
+    """
+    send_message(chat_id, t("welcome", lang))
+
+    keyboard = _skin_type_keyboard(lang)
     image_bytes = _load_fitzpatrick_scale_image()
-    if image_bytes is not None:
-        send_photo(
-            chat_id,
-            image_bytes,
-            caption=(
-                "🎨 השוו לגוון העור הטבעי שלכם (לא משוזף) ולתגובה הרגילה שלו לשמש, "
-                "ובחרו את המספר המתאים (I-VI):\n\n"
-                "פשוט שלחו את המספר (למשל 3) — או /set_skin_type <המספר> אם תרצו."
-            ),
-        )
-        # מאפשר לענות עם ספרה בודדת ("3") ולא רק "/set_skin_type 3" —
-        # ראו _pending_skin_type_pick והניתוב ב-handle_update.
-        _mark_pending_skin_type_pick(username)
-    else:
-        send_message(chat_id, "1️⃣ /set_skin_type <1-6> — סוג עור (סולם Fitzpatrick)")
 
-    send_message(
-        chat_id,
-        "אחרי שקבעתם סוג עור:\n"
-        "2️⃣ /start_session <עיר> — פותח מעקב, כולל תחזית UV ל-24 השעות הקרובות\n"
-        "3️⃣ /end_session — כשתסיימו, מחשב מדד חשיפה אישי\n\n"
-        "פקודות שימושיות נוספות: /today (סיכום יומי), /dashboard (אזור אישי עם גרפים), "
-        "/my_sessions (היסטוריה).\n\n"
-        "פקודה מלאה בכל שלב: הקלידו \"/\" ותראו את כל האפשרויות בתפריט של טלגרם.",
-    )
-    logger.info("Sent welcome message + Fitzpatrick scale to new user @%s", username)
+    if image_bytes is not None:
+        send_photo(chat_id, image_bytes, caption=t("skin_scale_caption", lang), reply_markup=keyboard)
+    else:
+        # בלי התמונה הכפתורים עדיין עומדים בפני עצמם — התוויות מילוליות.
+        send_message(chat_id, t("skin_question", lang), reply_markup=keyboard)
+
+    # גיבוי למי שמקליד בכל זאת ספרה בודדת (לקוח ישן, או הרגל) — עולה
+    # כלום ומציל את המקרה. ראו _pending_skin_type_pick והניתוב ב-handle_update.
+    _mark_pending_skin_type_pick(username)
+    logger.info("Sent welcome message + skin-type picker to @%s", username)
 
 
 def handle_dashboard(chat_id: int, username: str) -> None:
@@ -665,7 +778,17 @@ def handle_set_skin_type(chat_id: int, username: str, args: str) -> None:
         _mark_pending_skin_type_pick(username)
         return
 
-    skin_type = int(args)
+    _save_skin_type(chat_id, username, int(args))
+
+
+def _save_skin_type(
+    chat_id: int, username: str, skin_type: int, lang: str = i18n.DEFAULT_LANGUAGE
+) -> None:
+    """
+    שמירת סוג העור + אישור למשתמש. מופרד מ-handle_set_skin_type ב-
+    2026-09-12 כדי שגם נתיב הפקודה וגם לחיצה על כפתור (ראו
+    handle_callback_query) יעברו באותו קוד בדיוק.
+    """
     upsert_row(
         "users",
         # chat_id נשמר יחד עם skin_type — זו נקודת ה-INSERT הראשונה
@@ -675,14 +798,28 @@ def handle_set_skin_type(chat_id: int, username: str, args: str) -> None:
         {"telegram_username": username, "skin_type": skin_type, "chat_id": chat_id},
         on_conflict="telegram_username",
     )
-    send_message(chat_id, f"נשמר: סוג עור {skin_type}.")
     logger.info("Set skin_type=%s for @%s", skin_type, username)
+
+    # האישור נושא גם את הצעד הבא, וגם הוא בלחיצה — זה מה שהחליף את
+    # רשימת הפקודות שהייתה בהודעה השלישית של /start.
+    send_message(
+        chat_id,
+        t("skin_saved", lang, label=i18n.skin_type_label(skin_type, lang)),
+        reply_markup={
+            "keyboard": [[{
+                "text": t("share_location_button", lang),
+                "request_location": True,
+            }]],
+            "resize_keyboard": True,
+            "one_time_keyboard": True,
+        },
+    )
 
 
 # ---------------------------------------------------------------------
 # /start_session <עיר> — וגם שיתוף מיקום ישיר (ראו handle_start_session_location)
 # ---------------------------------------------------------------------
-def _can_start_session(chat_id: int, username: str) -> bool:
+def _can_start_session(chat_id: int, username: str, lang: str = i18n.DEFAULT_LANGUAGE) -> bool:
     """
     הבדיקות המשותפות לשני נתיבי ההתחלה (הקלדת עיר / שיתוף מיקום): יש
     סוג עור מוגדר, ואין session פתוח כבר. שולחת הודעת שגיאה בעברית
@@ -691,7 +828,13 @@ def _can_start_session(chat_id: int, username: str) -> bool:
     """
     users = select_rows("users", {"telegram_username": f"eq.{username}"})
     if not users:
-        send_message(chat_id, "קודם צריך להגדיר סוג עור: /set_skin_type <1-6>")
+        # כפתורים ולא "/set_skin_type <1-6>": זה המחסום הראשון של כל
+        # משתמש שלא עבר onboarding, ואין סיבה לדרוש ממנו להקליד כאן.
+        send_message(
+            chat_id,
+            t("need_skin_type_first", lang),
+            reply_markup=_skin_type_keyboard(lang),
+        )
         return False
 
     open_sessions = select_rows(
@@ -1293,9 +1436,9 @@ def _begin_session(
 _COORDINATE_ARGS_RE = re.compile(r"^(-?\d+(?:\.\d+)?)[,\s]\s*(-?\d+(?:\.\d+)?)$")
 
 
-def handle_start_session(chat_id: int, username: str, args: str) -> None:
+def handle_start_session(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
     location_text = args.strip()
-    if not _can_start_session(chat_id, username):
+    if not _can_start_session(chat_id, username, lang):
         return
 
     if not location_text:
@@ -1339,13 +1482,13 @@ def handle_start_session(chat_id: int, username: str, args: str) -> None:
     _begin_session(chat_id, username, geo["name"], geo["country"], uv_index, geo["latitude"], geo["longitude"])
 
 
-def handle_start_session_location(chat_id: int, username: str, lat: float, lon: float) -> None:
+def handle_start_session_location(chat_id: int, username: str, lat: float, lon: float, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
     """
     מטפל בהודעת location שמגיעה משיתוף מיקום (כפתור request_location) —
     ראו docs/2026-08-26-location-sharing-design.md. שימוש ב-lat/lon
     המדויקים מהטלפון (לא מרכז-עיר משוער) גם עבור קריאת ה-UV.
     """
-    if not _can_start_session(chat_id, username):
+    if not _can_start_session(chat_id, username, lang):
         return
 
     with httpx.Client() as client:
@@ -1614,7 +1757,7 @@ def fetch_sunset_utc(client: httpx.Client, lat: float, lon: float) -> datetime |
         return None
 
 
-def handle_add_session(chat_id: int, username: str, args: str) -> None:
+def handle_add_session(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
     """
     /add_session <עיר> start=HH:MM end=HH:MM [spf=<מספר>] [date=D.M] [uv=<מספר>]
     לדוגמה: /add_session תל אביב start=14:00 end=16:30 spf=30
@@ -1644,7 +1787,11 @@ def handle_add_session(chat_id: int, username: str, args: str) -> None:
 
     users = select_rows("users", {"telegram_username": f"eq.{username}"})
     if not users:
-        send_message(chat_id, "קודם צריך להגדיר סוג עור: /set_skin_type <1-6>")
+        send_message(
+            chat_id,
+            t("need_skin_type_first", lang),
+            reply_markup=_skin_type_keyboard(lang),
+        )
         return
     skin_type = users[0]["skin_type"]
 
@@ -2050,8 +2197,20 @@ COMMAND_HANDLERS = {
 }
 
 
-def _build_freeform_task(user_text: str) -> str:
-    """בונה את ה-task שנשלח ל-Agent Loop עבור הודעת טקסט חופשית (ראו _handle_freeform_question)."""
+def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> str:
+    """
+    בונה את ה-task שנשלח ל-Agent Loop עבור הודעת טקסט חופשית (ראו
+    _handle_freeform_question).
+
+    ה-prompt עצמו נשאר בעברית — הוא פונה למודל, לא למשתמש; רק שפת
+    *התשובה* נגזרת מ-lang (2026-09-14).
+
+    באותו תאריך נוספה גם ההנחיה לשאלות על הבוט עצמו. עד אז הגייטקיפר
+    סיווג אותן כ-NOISE והן נענו בשתיקה מוחלטת — משתמש אמיתי שאל
+    "English?" ולא קיבל כלום. מאז שהן VALID הן מגיעות לכאן, וצריכה
+    להיות להן תשובה אמיתית ולא הפניה גנרית לתפריט.
+    """
+    answer_language = "בעברית" if lang == "he" else "באנגלית"
     return (
         "אתה חלק מבוט טלגרם בשם SunSafe שעוזר למשתמשים לעקוב אחרי חשיפה "
         "לקרינת UV ולהתגונן מהשמש. המשתמש שלח הודעה חופשית (לא פקודה "
@@ -2065,17 +2224,28 @@ def _build_freeform_task(user_text: str) -> str:
         "\"כמה זמן הייתי בשמש היום\", \"מה היה אתמול\", \"תראה לי את "
         "ה-sessions שלי\" — **אל תנסה לחשב או לנחש תשובה** (אין לך גישה "
         "לנתונים האלה דרך הכלים שברשותך, רק לכלי מזג-אוויר חיים): "
-        "תפנה אותו לפקודה המתאימה — /today להיסטוריה של יום ספציפי, "
-        "או /my_sessions לרשימת כל ה-sessions שלו.\n\n"
-        "אם זו לא שאלה מאף אחד מהסוגים האלה (קטע טקסט לא ברור, או ניסיון "
-        "לנהל שיחה חופשית עם הבוט) — הסבר בקצרה שהבוט עובד בעיקר עם "
-        "פקודות מובנות (אפשר להקליד \"/\" לתפריט המלא), ושאפשר גם לשאול "
-        "ישירות על UV במקום מסוים.\n\n"
-        "ענה בעברית, קצר וברור (זו הודעת טלגרם) — בלי Markdown."
+        "תפנה אותו ל-/dashboard, האזור האישי, שם יש היסטוריה מלאה, "
+        "ניתוח יומי וחודשי, ואפשרות להוסיף ולערוך sessions.\n\n"
+        "אם זו שאלה על הבוט עצמו — מה הוא יודע לעשות או איך משתמשים בו "
+        "— ענה עליה ישירות ובקצרה: הוא עוקב אחרי חשיפה לשמש "
+        "(/start_session כשיוצאים, /end_session כשחוזרים, והוא מחשב מדד "
+        "חשיפה אישי לפי סוג העור וקרם ההגנה), מדווח UV ותחזית לכל מקום, "
+        "ומרכז הכל ב-/dashboard.\n\n"
+        "אם זו שאלה על שפה (\"English?\", \"אפשר באנגלית?\") — ענה בדיוק "
+        "את האמת הזו ואל תוסיף עליה: הבוט עובד בעברית בלבד כרגע. "
+        "**אין** הגדרת שפה, אין מתג ואין מסך הגדרות — אסור להמציא כאלה "
+        "ואסור להפנות את המשתמש ל\"הגדרות\" או לדשבורד בשביל שפה, "
+        "ואסור להבטיח שפות שהבוט לא מדבר. אפשר לומר בנימוס שתמיכה "
+        "באנגלית מתוכננת בהמשך.\n\n"
+        "אם זו לא שאלה מאף אחד מהסוגים האלה (קטע טקסט לא ברור) — הסבר "
+        "בקצרה מה הבוט עושה ושאפשר לשאול אותו ישירות על UV במקום מסוים.\n\n"
+        f"ענה {answer_language}, קצר וברור (זו הודעת טלגרם) — בלי Markdown."
     )
 
 
-def _handle_freeform_question(chat_id: int, username: str, text: str) -> None:
+def _handle_freeform_question(
+    chat_id: int, username: str, text: str, lang: str = i18n.DEFAULT_LANGUAGE
+) -> None:
     """
     טקסט חופשי שעבר את הגייטקיפר כ-VALID אבל לא תואם אף פקודה מוכרת —
     למשל "מה ה-UV בתל אביב עכשיו?" — מנותב ל-Agent Loop (mcp_agent_loop.py),
@@ -2094,12 +2264,12 @@ def _handle_freeform_question(chat_id: int, username: str, text: str) -> None:
     (VALID לא-פקודה הוא המקרה הנדיר, לא הנפוץ) — לא בעיה שנפתרת כאן.
     """
     try:
-        answer = run_agent_via_mcp(_build_freeform_task(text))
+        answer = run_agent_via_mcp(_build_freeform_task(text, lang))
     except Exception:
         logger.exception("Agent Loop failed answering free-text message from @%s: %s", username, text[:50])
         send_message(
             chat_id,
-            "לא הצלחתי לענות על זה כרגע. נסו שוב, או הקלידו \"/\" לתפריט הפקודות.",
+            t("agent_failed", lang),
         )
         return
 
@@ -2107,13 +2277,100 @@ def _handle_freeform_question(chat_id: int, username: str, text: str) -> None:
     logger.info("Answered free-text message from @%s via Agent Loop: %s", username, text[:50])
 
 
+@functools.lru_cache(maxsize=None)
+def _handler_takes_lang(handler) -> bool:
+    """
+    האם ה-handler מצהיר על פרמטר lang. מאפשר לתרגם פקודה אחת בכל פעם
+    (ראו ההערה על שלבים ב-i18n.py) בלי לשנות בבת אחת את החתימה של כל
+    שנים-עשר ה-handlers ואת הבדיקות שלהם. ממוקאש כי זה נקרא על כל עדכון.
+    """
+    try:
+        return "lang" in inspect.signature(handler).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _dispatch(handler, chat_id: int, username: str, args: str, lang: str) -> None:
+    """קורא ל-handler, ומעביר lang רק אם הוא יודע לקבל אותו."""
+    if _handler_takes_lang(handler):
+        handler(chat_id, username, args, lang=lang)
+    else:
+        handler(chat_id, username, args)
+
+
+def handle_callback_query(callback_query: dict) -> None:
+    """
+    לחיצה על כפתור inline. נוסף 2026-09-12 יחד עם בורר סוג-העור — עד אז
+    handle_update קרא רק update["message"], כלומר כפתורי inline בכלל לא
+    יכלו להחזיר תשובה (הכפתור היחיד שהיה, ה-Mini App של האופליין, פותח
+    web_app ולא שולח callback).
+
+    שני דברים שחייבים לקרות בכל מסלול: קריאה ל-answer_callback_query
+    (אחרת הכפתור נראה תקוע למשתמש), ואימות שה-callback_data הוא באמת
+    אחד מאלה שאנחנו שולחים — callback_data מגיע מהלקוח ואין שום ערובה
+    שהוא לא נגרד/שוחזר ידנית, אז מתייחסים אליו כקלט לא אמין.
+    """
+    query_id = callback_query.get("id")
+    data = callback_query.get("data") or ""
+    message = callback_query.get("message") or {}
+    chat_id = message.get("chat", {}).get("id")
+    username = (callback_query.get("from") or {}).get("username")
+    # ללחיצה על כפתור אין טקסט משלה, אז נגזרים מההודעה שהכפתור
+    # יושב עליה — היא נשלחה בשפה מסוימת, והתשובה צריכה להתאים לה.
+    lang = resolve_language(message.get("caption") or message.get("text"))
+
+    if not query_id or not chat_id or not username:
+        logger.warning("Ignoring malformed callback_query: %s", callback_query)
+        return
+
+    if not data.startswith(SKIN_TYPE_CALLBACK_PREFIX):
+        answer_callback_query(query_id)
+        logger.warning("Unknown callback_data from @%s: %r", username, data)
+        return
+
+    raw = data[len(SKIN_TYPE_CALLBACK_PREFIX):]
+
+    # "לא בטוחים? שלחו תמונה" — אין ב-Telegram כפתור שפותח מצלמה, אז
+    # מסבירים ומסתמכים על נתיב התמונה הקיים (handle_skin_type_photo,
+    # שהוא ממילא ברירת המחדל לכל תמונה נכנסת).
+    if raw == SKIN_CALLBACK_PHOTO:
+        answer_callback_query(query_id)
+        send_message(chat_id, t("skin_photo_instructions", lang))
+        logger.info("Sent hand-photo instructions to @%s", username)
+        return
+
+    # "בחירה אחרת" — חוזרים לבורר המלא אחרי הצעה מתמונה.
+    if raw == SKIN_CALLBACK_AGAIN:
+        answer_callback_query(query_id)
+        send_message(chat_id, t("skin_question", lang), reply_markup=_skin_type_keyboard(lang))
+        return
+
+    if not raw.isdigit() or not (1 <= int(raw) <= 6):
+        answer_callback_query(query_id)
+        logger.warning("Out-of-range skin type in callback_data from @%s: %r", username, data)
+        return
+
+    skin_type = int(raw)
+    # סוגרים את הספינר לפני הכתיבה ל-DB: הלחיצה כבר "נקלטה" מבחינת
+    # המשתמש, ואין סיבה שהוא יראה כפתור תקוע בזמן קריאה ל-Supabase.
+    answer_callback_query(query_id, t("skin_toast", lang, n=skin_type))
+    _pending_skin_type_pick.pop(username, None)
+    _save_skin_type(chat_id, username, skin_type, lang)
+    logger.info("Skin type %s set by @%s via button", skin_type, username)
+
+
 def handle_update(update: dict) -> None:
     """
-    מטפל בעדכון בודד מ-getUpdates: אחת מהפקודות המוכרות, תמונה בודדת
-    (הצעת סוג עור/בדיקת נזק-שמש), מיקום משותף, או טקסט חופשי — VALID
-    (לא NOISE, לא פקודה מוכרת) מנותב ל-Agent Loop דרך MCP, ראו
-    _handle_freeform_question.
+    מטפל בעדכון בודד מ-getUpdates: לחיצה על כפתור inline, אחת מהפקודות
+    המוכרות, תמונה בודדת (הצעת סוג עור/בדיקת נזק-שמש), מיקום משותף, או
+    טקסט חופשי — VALID (לא NOISE, לא פקודה מוכרת) מנותב ל-Agent Loop
+    דרך MCP, ראו _handle_freeform_question.
     """
+    callback_query = update.get("callback_query")
+    if callback_query:
+        handle_callback_query(callback_query)
+        return
+
     message = update.get("message") or {}
     chat_id = message.get("chat", {}).get("id")
     username = message.get("from", {}).get("username")
@@ -2175,8 +2432,12 @@ def handle_update(update: dict) -> None:
             if classification == "NOISE":
                 return
 
+    # עברית כברירת מחדל; אנגלית רק אם המשתמש באמת כותב אנגלית.
+    # ראו i18n.resolve_language לרציונל (ולתקלה שהובילה לזה).
+    lang = resolve_language(text)
+
     if not username:
-        send_message(chat_id, "צריך שיהיה לך username מוגדר בהגדרות טלגרם כדי להשתמש בפקודות האלה.")
+        send_message(chat_id, t("need_username", lang))
         return
 
     # רענון הזדמנותי של chat_id על כל הודעה — לא insert (PATCH בלבד),
@@ -2188,36 +2449,42 @@ def handle_update(update: dict) -> None:
     except SupabaseError as e:
         logger.warning("Failed to refresh chat_id for @%s: %s", username, e)
 
-    if photo_sizes:
-        largest_photo = photo_sizes[-1]
-        # /diagnose_skin "תופס" את התמונה הבאה (בתוך חלון הזמן), אחרת
-        # ברירת המחדל הקיימת נשארת — הצעת סוג עור. ראו ההערה מעל
-        # _pending_diagnose_skin להסבר המלא על הבחירה הזו.
-        expires_at = _pending_diagnose_skin.pop(username, None)
-        if expires_at is not None and datetime.now(timezone.utc) < expires_at:
-            handle_skin_damage_photo(chat_id, username, largest_photo["file_id"])
-        else:
-            handle_skin_type_photo(chat_id, username, largest_photo["file_id"])
-        return
-
-    if location:
-        handle_start_session_location(chat_id, username, location["latitude"], location["longitude"])
-        return
-
-    command, _, args = text.partition(" ")
-    handler = COMMAND_HANDLERS.get(command)
-    if handler is None:
-        # לא פקודה מוכרת, אבל כבר עבר את הגייטקיפר כ-VALID (אחרת היינו
-        # חוזרים למעלה) — טקסט חופשי לגיטימי-כנראה, מנותב ל-Agent Loop
-        # במקום להיעלם בשקט (ראו _handle_freeform_question).
-        _handle_freeform_question(chat_id, username, text)
-        return
-
+    # כל שלושת נתיבי הפעולה (תמונה / מיקום / פקודה) עטופים יחד:
+    # עד 2026-09-13 רק נתיב הפקודות היה מוגן, ונתיבי התמונה והמיקום
+    # חזרו ב-return לפני ה-try. המשמעות בפועל (נצפה בפרודקשן): משתמש
+    # שיתף מיקום, Supabase החזיר 504 חולף, החריגה עלתה עד poll_forever,
+    # נרשמה ללוג — והמשתמש לא קיבל *כלום*. בדיוק אותה חוויה של "לחצתי
+    # ולא קרה כלום" שכבר רדפה אותנו. עכשיו לכל כשל כזה יש תשובה.
     try:
-        handler(chat_id, username, args)
+        if photo_sizes:
+            largest_photo = photo_sizes[-1]
+            # /diagnose_skin "תופס" את התמונה הבאה (בתוך חלון הזמן), אחרת
+            # ברירת המחדל הקיימת נשארת — הצעת סוג עור. ראו ההערה מעל
+            # _pending_diagnose_skin להסבר המלא על הבחירה הזו.
+            expires_at = _pending_diagnose_skin.pop(username, None)
+            if expires_at is not None and datetime.now(timezone.utc) < expires_at:
+                handle_skin_damage_photo(chat_id, username, largest_photo["file_id"])
+            else:
+                handle_skin_type_photo(chat_id, username, largest_photo["file_id"], lang)
+            return
+
+        if location:
+            handle_start_session_location(chat_id, username, location["latitude"], location["longitude"], lang)
+            return
+
+        command, _, args = text.partition(" ")
+        handler = COMMAND_HANDLERS.get(command)
+        if handler is None:
+            # לא פקודה מוכרת, אבל כבר עבר את הגייטקיפר כ-VALID (אחרת היינו
+            # חוזרים למעלה) — טקסט חופשי לגיטימי-כנראה, מנותב ל-Agent Loop
+            # במקום להיעלם בשקט (ראו _handle_freeform_question).
+            _handle_freeform_question(chat_id, username, text, lang)
+            return
+
+        _dispatch(handler, chat_id, username, args, lang)
     except SupabaseError as e:
-        logger.error("Supabase error handling %s for @%s: %s", command, username, e)
-        send_message(chat_id, "משהו השתבש בשמירת הנתונים. נסו שוב בעוד רגע.")
+        logger.error("Supabase error handling update for @%s: %s", username, e)
+        send_message(chat_id, t("storage_error", lang))
 
 
 def poll_forever() -> None:

@@ -872,7 +872,7 @@
 
     document.getElementById("avatar-initial").textContent = currentUser.username.charAt(0).toUpperCase();
     document.getElementById("display-name").textContent = "@" + currentUser.username;
-    document.getElementById("display-sub").textContent = "סוג עור " + toRoman(currentUser.skinType);
+    document.getElementById("display-sub").textContent = skinTypeLabel(currentUser.skinType);
 
     const dates = [...new Set(currentUser.sessions.map(s => s.date))].sort().reverse();
     currentDate = dates[0];
@@ -886,8 +886,16 @@
     renderMonthlyAnalysis();
   }
 
-  function toRoman(n) {
-    return ["", "I", "II", "III", "IV", "V", "VI"][n] || n;
+  /**
+   * "סוג עור 3 · בינוני". עד 2026-09-12 הוצג כאן מספר רומי (toRoman —
+   * "סוג עור III"), כמו בסולם Fitzpatrick המקורי — אבל ספרות רומיות לא
+   * מובנות לכל אחד, וזה גם לא התאים לשפה של הבוט עצמו (/set_skin_type 3).
+   * התוויות זהות ל-SKIN_TYPE_LABELS ב-bot_commands.py בכוונה, כדי
+   * שהמשתמש יראה את אותו דבר בשני המקומות.
+   */
+  function skinTypeLabel(n) {
+    const names = ["", "בהיר מאוד", "בהיר", "בינוני", "זיתי", "חום", "כהה מאוד"];
+    return names[n] ? `סוג עור ${n} · ${names[n]}` : `סוג עור ${n}`;
   }
 
   function renderDatePills(dates) {

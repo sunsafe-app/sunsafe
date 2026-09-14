@@ -1,0 +1,559 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>SunSafe FAQ</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@500;700;900&family=Heebo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+  :root{
+    --ground:#F5F8FA;
+    --surface:#FFFFFF;
+    --surface-2:#EFF3F6;
+    --ink:#1C2430;
+    --muted:#5B6472;
+    --faint:#8A93A2;
+    --line:#E2E7ED;
+    --accent:#DD5E0E;
+    --accent-ink:#FFFFFF;
+    --accent-soft:#FCE7D8;
+    --focus:#2E6FE8;
+
+    --good:#0CA30C;
+    --good-soft:#E3F7E3;
+    --warn:#C97B00;
+    --warn-soft:#FDF0D8;
+    --serious:#C85A2E;
+    --serious-soft:#FBE6DC;
+    --critical:#C22F2F;
+    --critical-soft:#FAE0E0;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#12161C;
+      --surface:#1A2029;
+      --surface-2:#212836;
+      --ink:#EDF0F4;
+      --muted:#A2ABBA;
+      --faint:#6E7787;
+      --line:#2B3342;
+      --accent:#F0873D;
+      --accent-ink:#1A1005;
+      --accent-soft:#3A2415;
+      --focus:#6FA0FF;
+
+      --good:#4FCB4F;
+      --good-soft:#173318;
+      --warn:#E3B23C;
+      --warn-soft:#3A2E10;
+      --serious:#EF8F63;
+      --serious-soft:#3A2318;
+      --critical:#F16B6B;
+      --critical-soft:#3A1717;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#12161C;
+    --surface:#1A2029;
+    --surface-2:#212836;
+    --ink:#EDF0F4;
+    --muted:#A2ABBA;
+    --faint:#6E7787;
+    --line:#2B3342;
+    --accent:#F0873D;
+    --accent-ink:#1A1005;
+    --accent-soft:#3A2415;
+    --focus:#6FA0FF;
+
+    --good:#4FCB4F;
+    --good-soft:#173318;
+    --warn:#E3B23C;
+    --warn-soft:#3A2E10;
+    --serious:#EF8F63;
+    --serious-soft:#3A2318;
+    --critical:#F16B6B;
+    --critical-soft:#3A1717;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ text-size-adjust:100%; }
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:"Heebo","Segoe UI",Arial,sans-serif;
+    direction:rtl;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-soft); color:var(--ink); }
+  a{ color:inherit; }
+  :focus-visible{ outline:2.5px solid var(--focus); outline-offset:2px; border-radius:4px; }
+
+  code, .cmd{
+    font-family:"IBM Plex Mono", ui-monospace, Consolas, monospace;
+    direction:ltr;
+    unicode-bidi:isolate;
+  }
+
+  .cmd{
+    display:inline-block;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    color:var(--ink);
+    padding:.1em .5em;
+    border-radius:6px;
+    font-size:.9em;
+    font-weight:600;
+    letter-spacing:.01em;
+  }
+
+  .wrap{
+    max-width:760px;
+    margin:0 auto;
+    padding: 3.4rem 1.5rem 5rem;
+  }
+
+  /* ---------- header ---------- */
+  header.top{
+    margin-bottom: 2.6rem;
+  }
+  .eyebrow{
+    display:flex;
+    align-items:center;
+    gap:.5rem;
+    font-family:"Heebo",sans-serif;
+    font-weight:700;
+    font-size:.8rem;
+    letter-spacing:.09em;
+    color:var(--accent);
+    text-transform:uppercase;
+    margin-bottom:.9rem;
+  }
+  .eyebrow .dot{
+    width:7px; height:7px; border-radius:50%;
+    background:var(--accent);
+    flex:none;
+  }
+  h1.title{
+    font-family:"Frank Ruhl Libre", Georgia, serif;
+    font-weight:900;
+    font-size: clamp(2.1rem, 5vw, 2.9rem);
+    line-height:1.12;
+    margin:0 0 .7rem;
+    text-wrap:balance;
+    color:var(--ink);
+  }
+  p.dek{
+    font-size:1.05rem;
+    color:var(--muted);
+    max-width:56ch;
+    margin:0;
+  }
+
+  /* ---------- quick nav ---------- */
+  nav.jump{
+    display:flex;
+    flex-wrap:wrap;
+    gap:.5rem;
+    margin-top:1.8rem;
+  }
+  nav.jump a{
+    text-decoration:none;
+    font-size:.85rem;
+    font-weight:600;
+    color:var(--muted);
+    background:var(--surface);
+    border:1px solid var(--line);
+    padding:.42rem .85rem;
+    border-radius:999px;
+    transition:border-color .15s ease, color .15s ease;
+  }
+  nav.jump a:hover{ border-color:var(--accent); color:var(--accent); }
+
+  /* ---------- score legend ---------- */
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:.5rem;
+    margin:1rem 0 1.3rem;
+  }
+  .chip{
+    display:flex;
+    align-items:baseline;
+    gap:.4rem;
+    padding:.4rem .75rem;
+    border-radius:9px;
+    font-size:.85rem;
+    font-weight:600;
+    border:1px solid transparent;
+  }
+  .chip b{ font-family:"IBM Plex Mono",monospace; direction:ltr; unicode-bidi:isolate; font-size:.88em; }
+  .chip.good{ background:var(--good-soft); color:var(--good); }
+  .chip.warn{ background:var(--warn-soft); color:var(--warn); }
+  .chip.serious{ background:var(--serious-soft); color:var(--serious); }
+  .chip.critical{ background:var(--critical-soft); color:var(--critical); }
+
+  /* ---------- sections ---------- */
+  section.cat{
+    margin-top: 3.2rem;
+    scroll-margin-top: 1.5rem;
+  }
+  .cat-head{
+    display:flex;
+    align-items:flex-start;
+    gap:.85rem;
+    margin-bottom:.5rem;
+  }
+  .cat-icon{
+    flex:none;
+    width:2.15rem; height:2.15rem;
+    border-radius:9px;
+    background:var(--accent-soft);
+    color:var(--accent);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .cat-icon svg{ width:1.15rem; height:1.15rem; }
+  h2.cat-title{
+    font-family:"Frank Ruhl Libre", Georgia, serif;
+    font-weight:700;
+    font-size:1.5rem;
+    margin:.15rem 0 0;
+    color:var(--ink);
+  }
+  p.cat-dek{
+    color:var(--muted);
+    font-size:.95rem;
+    margin:.3rem 0 1.2rem 0;
+    max-width:60ch;
+  }
+
+  /* ---------- Q&A cards ---------- */
+  .qa{
+    display:flex;
+    flex-direction:column;
+    border:1px solid var(--line);
+    border-radius:12px;
+    overflow:hidden;
+    background:var(--surface);
+  }
+  .qa + .qa{ margin-top:.6rem; }
+
+  details.q{
+    border-top:1px solid var(--line);
+  }
+  details.q:first-child{ border-top:none; }
+
+  details.q summary{
+    list-style:none;
+    cursor:pointer;
+    padding:1rem 1.1rem;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:1rem;
+    font-weight:600;
+    font-size:1rem;
+    color:var(--ink);
+  }
+  details.q summary::-webkit-details-marker{ display:none; }
+  details.q summary .chev{
+    flex:none;
+    width:1.4rem; height:1.4rem;
+    color:var(--faint);
+    transition:transform .18s ease;
+  }
+  details.q[open] summary .chev{ transform:rotate(180deg); color:var(--accent); }
+  details.q summary:hover{ background:var(--surface-2); }
+
+  .a-body{
+    padding: 0 1.1rem 1.15rem;
+    color:var(--muted);
+    font-size:.96rem;
+    max-width:64ch;
+  }
+  .a-body p{ margin:.5rem 0; }
+  .a-body p:first-child{ margin-top:0; }
+  .a-body p:last-child{ margin-bottom:0; }
+  .a-body b{ color:var(--ink); font-weight:700; }
+
+  /* ---------- footer ---------- */
+  footer.foot{
+    margin-top:4rem;
+    padding-top:1.6rem;
+    border-top:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    gap:.6rem;
+    color:var(--faint);
+    font-size:.85rem;
+  }
+  footer.foot svg{ width:1.1rem; height:1.1rem; flex:none; color:var(--accent); }
+
+  @media (max-width:480px){
+    .wrap{ padding:2.4rem 1.1rem 3.5rem; }
+    details.q summary{ font-size:.95rem; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow"><span class="dot"></span>מדריך משתמש · SunSafe בטלגרם</div>
+    <h1 class="title">שאלות נפוצות</h1>
+    <p class="dek">כל מה שצריך לדעת כדי לעקוב אחרי חשיפה לשמש עם הבוט — מהגדרה ראשונית ועד מה לעשות כשמשהו לא עובד כמו שציפיתם.</p>
+    <nav class="jump">
+      <a href="#start">התחלת עבודה</a>
+      <a href="#sessions">מעקב חשיפה</a>
+      <a href="#score">הבנת הציון</a>
+      <a href="#photos">תמונות ו-AI</a>
+      <a href="#offline">מצב אופליין</a>
+      <a href="#dashboard">האזור האישי</a>
+      <a href="#trouble">בעיות נפוצות</a>
+    </nav>
+  </header>
+
+  <!-- ============== 1. GETTING STARTED ============== -->
+  <section class="cat" id="start">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"/></svg>
+      </div>
+      <div>
+        <h2 class="cat-title">התחלת עבודה</h2>
+      </div>
+    </div>
+    <p class="cat-dek">שני צעדים לפני שהבוט יכול לחשב לכם משהו.</p>
+
+    <div class="qa">
+      <details class="q" open>
+        <summary>איך מתחילים להשתמש בבוט?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>שולחים <span class="cmd">/start</span> — היכרות קצרה עם הבוט, ומיד אחריה הגדרת סוג עור (סולם Fitzpatrick — כמה מהר העור שלכם נשרף בשמש; אפשר גם ישירות עם <span class="cmd">/set_skin_type &lt;1-6&gt;</span>). זה הבסיס לכל חישוב אחר, אז <span class="cmd">/start_session</span> יסרב לעבוד לפני שזה מוגדר.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>מה זה סולם Fitzpatrick, ואיך יודעים איזה מספר מתאים לי?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>סולם רפואי נפוץ מ-<b>1</b> (עור בהיר מאוד, נשרף כמעט תמיד) עד <b>6</b> (עור כהה מאוד, כמעט לא נשרף). לא בטוחים? שלחו לבוט תמונה של האזור שנחשף לשמש — הוא יציע מספר עם רמת ביטחון, ואתם רק מאשרים עם <span class="cmd">/set_skin_type</span>.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>אפשר לשנות את סוג העור אחר כך?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>כן, בכל רגע — <span class="cmd">/set_skin_type</span> עם מספר אחר דורס את הקודם.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============== 2. SESSIONS ============== -->
+  <section class="cat" id="sessions">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.3V12l3.3 2"/></svg>
+      </div>
+      <div><h2 class="cat-title">מעקב אחר חשיפה</h2></div>
+    </div>
+    <p class="cat-dek">כל חשיפה לשמש היא "session" — פרק זמן רציף אחד, מהתחלה עד סוף.</p>
+
+    <div class="qa">
+      <details class="q">
+        <summary>איך מתחילים למדוד?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p><span class="cmd">/start_session &lt;עיר&gt;</span>, למשל <span class="cmd">/start_session תל אביב</span>. אפשר גם בלי לכתוב עיר — הבוט יציע כפתור לשיתוף מיקום מדויק מהטלפון. הוא שולף את ה-UV הנוכחי לאותו מקום ומתחיל לעקוב.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>איך מסיימים?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p><span class="cmd">/end_session</span> — ואם השתמשתם בקרם הגנה, מוסיפים את ה-SPF: <span class="cmd">/end_session 30</span>. בלי מספר, הבוט מניח שלא הייתה הגנה.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>שכחתי לסיים session אתמול, מה עכשיו?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p><span class="cmd">/edit_session &lt;מספר&gt; end=HH:MM</span> (או <span class="cmd">end=now</span> אם זה עדיין פתוח וממש נגמר עכשיו). את המספר רואים ב-<span class="cmd">/my_sessions</span>. השעה מתפרשת לפי <b>הזמן המקומי</b> של העיר של אותו session, לא UTC.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>יש לי חשיפה מלפני שהתחלתי להשתמש בבוט — אפשר להוסיף בדיעבד?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>כן: <span class="cmd">/add_session &lt;עיר&gt; start=HH:MM end=HH:MM</span>, ואפשר להוסיף <span class="cmd">date=D.M</span> אם זה לא היום ו-<span class="cmd">spf=&lt;מספר&gt;</span> אם היה קרם הגנה. גם כאן, השעות הן שעון-קיר של העיר שכתבתם.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>יש לי כבר session פתוח והבוט מסרב לפתוח חדש?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>זה מכוון — כל session מייצג פרק זמן רציף אחד, ולא רוצים שניים חופפים. סגרו את הקודם עם <span class="cmd">/end_session</span>, או מחקו אותו אם הוא לא רלוונטי (ראו הבא).</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>איך מוחקים session שנרשם בטעות?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p><span class="cmd">/delete_session &lt;מספר&gt;</span> — המספר מופיע ליד כל שורה ב-<span class="cmd">/my_sessions</span>.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============== 3. SCORE ============== -->
+  <section class="cat" id="score">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V11M10 19V5M16 19v-7M22 19H2"/></svg>
+      </div>
+      <div><h2 class="cat-title">הבנת הציון</h2></div>
+    </div>
+    <p class="cat-dek">מה המספרים שהבוט שולח באמת אומרים.</p>
+
+    <div class="qa">
+      <details class="q" open>
+        <summary>מה זה "מדד חשיפה" (exposure score)?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>אחוז שמייצג כמה מתוך "זמן החשיפה הבטוח" שלכם כבר ניצלתם — בהתחשב ב-UV באותה שעה, סוג העור, וכל קרם הגנה. <b>100%</b> זה בדיוק הגבול המומלץ; מעל זה כבר חצינו אותו.</p>
+          <div class="legend">
+            <span class="chip good"><b>&lt;40%</b> תקין</span>
+            <span class="chip warn"><b>40–69%</b> שימו לב</span>
+            <span class="chip serious"><b>70–99%</b> גבוה</span>
+            <span class="chip critical"><b>100%+</b> קריטי</span>
+          </div>
+        </div>
+      </details>
+      <details class="q">
+        <summary>איך SPF משפיע על החישוב?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>מוסיף הגנה, אבל לא באופן ליניארי מלא — הנוסחה שמרנית, בהנחה שקרם לא נמרח ולא מתחדש בצורה מושלמת. בפועל <span class="cmd">SPF 30</span> מאריך את זמן החשיפה הבטוח פי כ-12.6, לא פי 30.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary><span class="cmd">/today</span> אמור להראות גם גרף, אבל לפעמים הוא לא מגיע?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>הגרף מוצג רק אם יש לפחות session אחד מאותו יום עם מיקום מדויק שמור. sessions ישנים מלפני שהבוט שמר מיקום עדיין נספרים בסיכום הטקסט, פשוט לא יכולים להצטייר על עקומת UV.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============== 4. PHOTOS & AI ============== -->
+  <section class="cat" id="photos">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6.5" width="18" height="13" rx="2.2"/><circle cx="12" cy="13" r="3.4"/><path d="M8.5 6.5l1.3-2h4.4l1.3 2"/></svg>
+      </div>
+      <div><h2 class="cat-title">תמונות ובינה מלאכותית</h2></div>
+    </div>
+    <p class="cat-dek">שני שימושים שונים לתמונה — לפני החשיפה ואחריה.</p>
+
+    <div class="qa">
+      <details class="q">
+        <summary>מה קורה כששולחים תמונה סתם ככה?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>כברירת מחדל, הבוט מנתח אותה כדי <b>להציע</b> סוג עור (Fitzpatrick). זו רק הצעה — הבוט לא כותב כלום לבד, אתם מאשרים (או מתקנים) עם <span class="cmd">/set_skin_type</span>.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>איך בודקים אם נשרפתי בשמש?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p><span class="cmd">/diagnose_skin</span>, ואז שולחים תמונה ברורה של האזור שנחשף. הבוט מעריך חומרה (ללא סימנים / אודם קל / משמעותי / עז) — <b>לא אבחנה רפואית</b>, ובמקרים משמעותיים הוא ימליץ במפורש לפנות לרופא.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>התמונות שלי נשמרות איפשהו?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>לא. כל תמונה נשלחת לניתוח ומיד נזרקת — רק התוצאה הטקסטואלית (ההערכה עצמה) נשמרת בהיסטוריה שלכם, אף פעם לא קובץ התמונה.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============== 5. OFFLINE ============== -->
+  <section class="cat" id="offline">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5a15 15 0 0118 0M6.2 12a10.5 10.5 0 0111.6 0M9.4 15.5a6 6 0 015.2 0"/><circle cx="12" cy="19" r="1.15" fill="currentColor" stroke="none"/></svg>
+      </div>
+      <div><h2 class="cat-title">מצב אופליין</h2></div>
+    </div>
+    <p class="cat-dek">בדיוק כשהחשיפה לשמש קורית, הקליטה הכי גרועה.</p>
+
+    <div class="qa">
+      <details class="q">
+        <summary>מה עושים כשאין קליטה בשטח?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p><span class="cmd">/offline_session</span> פותח דף מיוחד בתוך טלגרם. פתחו אותו <b>פעם אחת מראש, כשיש אינטרנט</b> — כך הדפדפן שומר אותו, ומשם אפשר להתחיל/לסיים session גם בלי חיבור בכלל. המיקום והשעה נשמרים ישירות על המכשיר.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>מתי הנתונים מהמצב האופליין מגיעים לחשבון שלי?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>ברגע שיש שוב אינטרנט, לוחצים "סנכרן עכשיו" באותו דף. אפשר ללחוץ עליו כמה פעמים בלי חשש — כל session מזוהה באופן ייחודי, אז הוא לעולם לא נכפל, גם אם הבקשה נשלחת כמה פעמים.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>קיבלתי "אימות הזהות פג" כשניסיתי לסנכרן?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>לרוב עוזר לסגור את הדף ולפתוח אותו מחדש דרך <span class="cmd">/offline_session</span> בבוט (לא מבוקמארק שמור). הנתונים שלכם לא הולכים לאיבוד בינתיים — הם נשארים במכשיר עד שהסנכרון מצליח.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============== 6. DASHBOARD ============== -->
+  <section class="cat" id="dashboard">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="12" rx="1.8"/><path d="M8.5 20h7M12 16.5V20"/></svg>
+      </div>
+      <div><h2 class="cat-title">האזור האישי</h2></div>
+    </div>
+    <p class="cat-dek">כל ההיסטוריה שלכם, בדפדפן.</p>
+
+    <div class="qa">
+      <details class="q">
+        <summary>מה זה <span class="cmd">/dashboard</span>?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>שולח קישור חד-פעמי, תקף ל-<b>24 שעות</b>, לעמוד אישי בדפדפן עם כל היסטוריית ה-sessions שלכם. הקישור מזהה אתכם ישירות — עדיף לא להעביר אותו הלאה.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ============== 7. TROUBLESHOOTING ============== -->
+  <section class="cat" id="trouble">
+    <div class="cat-head">
+      <div class="cat-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l9.5 16.5H2.5L12 3.5z"/><path d="M12 10v4.2M12 17.2v.05"/></svg>
+      </div>
+      <div><h2 class="cat-title">בעיות נפוצות</h2></div>
+    </div>
+    <p class="cat-dek">הודעות שקיבלתם והמשמעות המדויקת שלהן.</p>
+
+    <div class="qa">
+      <details class="q">
+        <summary>"לא הצלחתי לזהות עיר בשם..." — למה?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>לרוב איות לא מדויק או שם עיר נדיר מדי. נסו שם מוכר יותר (עיר גדולה קרובה), או וודאו שאין שגיאת הקלדה. אפשר תמיד גם לשתף מיקום מהטלפון במקום להקליד שם עיר.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>"אין לכם @username ציבורי בהגדרות טלגרם"?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>הבוט מזהה אתכם לפי ה-<b>@username</b> הציבורי של טלגרם (לא לפי שם התצוגה). בלי אחד מוגדר, תכונות כמו האזור האישי וסנכרון אופליין לא יכולות לזהות אתכם. מגדירים אחד ב: הגדרות טלגרם ← עריכת פרופיל ← שם משתמש.</p>
+        </div>
+      </details>
+      <details class="q">
+        <summary>"שעת הסיום לא יכולה להיות בעתיד" — אבל זה בדיוק השעה עכשיו אצלי?<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></summary>
+        <div class="a-body">
+          <p>שעות ב-<span class="cmd">/add_session</span> וב-<span class="cmd">/edit_session</span> מתפרשות לפי הזמן המקומי של <b>העיר שכתבתם</b> — אז ההודעה הזו כמעט תמיד אומרת שהשעה שהוקלדה באמת מאוחרת מהרגע הנוכחי (לרוב טעות הקלדה, למשל שעון 24h מול AM/PM). ודאו שכתבתם שעון-קיר אמיתי, לא ניחוש.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"/></svg>
+    <span>המדריך משקף את התנהגות הבוט בפועל, ומתעדכן איתו.</span>
+  </footer>
+
+</div>
+
+</body></html>

@@ -49,10 +49,9 @@ DESCRIPTION = (
     "איך מתחילים: /start — היכרות קצרה + הגדרת סוג עור (סולם Fitzpatrick), "
     "לפני כל שאר הפקודות.\n\n"
     "מה עוד הבוט עושה:\n"
-    "• /start_session <עיר> — מתחיל מעקב, כולל תחזית UV ל-24 השעות הקרובות\n"
+    "• /start_session — מתחיל מעקב (שיתוף מיקום או שם עיר), כולל תחזית UV\n"
     "• /end_session — מסיים ומחשב מדד חשיפה אישי (לפי סוג העור וקרם הגנה)\n"
-    "• /my_sessions — היסטוריית ה-sessions שלכם\n"
-    "• /dashboard — אזור אישי עם גרפים, וגם הוספה/עריכה/מחיקה של sessions"
+    "• /dashboard — אזור אישי: גרפים, היסטוריה, והוספה/עריכה של sessions"
 )
 
 # סדר = סדר ההופעה בתפריט "/" בטלגרם. שם פקודה חייב: אותיות קטנות/
@@ -60,32 +59,87 @@ DESCRIPTION = (
 # הקיים ב-bot_commands.py.
 #
 # 2026-09-12: add_session / edit_session / delete_session ירדו מהתפריט —
-# ההוספה, העריכה והמחיקה עברו לדשבורד (/dashboard). הפקודות עצמן עדיין
-# מוכרות לבוט ומחזירות קישור לאזור האישי (handle_moved_to_dashboard
-# ב-bot_commands.py), אבל אין סיבה להציע אותן בתפריט.
+# ההוספה, העריכה והמחיקה עברו לדשבורד (/dashboard).
+#
+# 2026-09-13: התפריט צומצם לארבע פקודות בלבד — מסלול החיים של המשתמש
+# ותו לא: התחלה, פתיחת מעקב, סגירתו, והאזור האישי. רשימה של תשע
+# פקודות היא בדיוק מה שמרתיע משתמש לא טכני, וזה הכיוון שאליו הולך כל
+# הממשק ממילא (כפתורים במקום הקלדה).
+#
+# חשוב: הסרה מהתפריט היא *לא* הסרה מהבוט. /today, /my_sessions,
+# /diagnose_skin, /offline_session ו-/set_skin_type ממשיכים לעבוד
+# במלואם למי שמקליד אותם — הם פשוט לא מוצעים יותר. את היכולות שלהם
+# אפשר להשיג גם דרך הדשבורד (היסטוריה, ניתוח יומי/חודשי) ודרך
+# הכפתורים בבוט (בחירת סוג עור, צילום היד).
 COMMANDS = [
-    ("start", "ברוכים הבאים + הסבר קצר איך מתחילים"),
-    ("start_session", "התחלת session חדש למעקב חשיפה לשמש"),
-    ("end_session", "סיום ה-session הפתוח וחישוב מדד חשיפה"),
-    ("my_sessions", "רשימת ה-sessions האחרונים שלכם"),
-    ("offline_session", "תיעוד session בלי אינטרנט"),
-    ("set_skin_type", "הגדרת סוג עור (1-6, סולם Fitzpatrick)"),
-    ("diagnose_skin", "הערכת נזק-שמש מתמונה (לא ייעוץ רפואי)"),
-    ("today", "אנליזה יומית + גרף UV (אפשר גם today date=D.M לתאריך אחר)"),
-    ("dashboard", "קישור לאזור האישי שלכם"),
+    ("start", "ברוכים הבאים + הגדרת סוג עור"),
+    ("start_session", "התחלת מעקב חשיפה לשמש"),
+    ("end_session", "סיום המעקב וחישוב מדד חשיפה"),
+    ("dashboard", "האזור האישי — גרפים, היסטוריה ועריכה"),
+]
+
+# --- אנגלית — רדום (2026-09-14) -----------------------------------------
+# טלגרם תומך בפרופיל לפי שפה דרך פרמטר language_code ב-setMyCommands/
+# setMyDescription/setMyShortDescription, ובוחר אוטומטית לפי שפת הלקוח.
+#
+# התמיכה באנגלית כובתה באותו יום שבו נבנתה ("נחזור לזה מאוחר יותר"),
+# והטקסטים כאן נשמרים מוכנים להפעלה מחדש. כרגע main() לא רק *לא* רושם
+# אותם — הוא גם **מוחק** רישום קודם (ראו _clear_english שם), אחרת
+# משתמש עם טלגרם באנגלית היה ממשיך לראות תפריט ותיאור באנגלית בזמן
+# שהבוט עצמו עונה רק בעברית.
+#
+# להפעלה מחדש: להחזיר את הרישום ב-main(), ולהחזיר ENGLISH_ENABLED=True
+# ב-i18n.py.
+NAME_EN = "SunSafe – sun protection helper ☀️"
+
+SHORT_DESCRIPTION_EN = (
+    "🌞 Tracks your UV exposure through the day and tells you when to "
+    "cover up. Send /start to begin."
+)
+
+DESCRIPTION_EN = (
+    "☀️ SunSafe helps you track your daily UV exposure and avoid "
+    "overexposure and sunburn.\n\n"
+    "Getting started: /start — a quick intro and your skin type "
+    "(Fitzpatrick scale), which everything else builds on.\n\n"
+    "What else it does:\n"
+    "• /start_session — starts tracking (share a location or type a city), "
+    "with a UV forecast\n"
+    "• /end_session — ends it and works out your personal exposure score "
+    "(from your skin type and sunscreen)\n"
+    "• /dashboard — your personal area: charts, history, and adding or "
+    "editing sessions"
+)
+
+COMMANDS_EN = [
+    ("start", "Welcome + set your skin type"),
+    ("start_session", "Start tracking sun exposure"),
+    ("end_session", "End tracking and get your exposure score"),
+    ("dashboard", "Your personal area — charts, history, editing"),
 ]
 
 
 def _assert_within_limits() -> None:
     """בדיקת מגבלות Bot API לפני שליחה — עדיף כשל ברור פה מ-400 סתום מטלגרם."""
-    assert len(NAME) <= 64, f"NAME too long: {len(NAME)}/64"
-    assert len(SHORT_DESCRIPTION) <= 120, f"SHORT_DESCRIPTION too long: {len(SHORT_DESCRIPTION)}/120"
-    assert len(DESCRIPTION) <= 512, f"DESCRIPTION too long: {len(DESCRIPTION)}/512"
-    assert len(COMMANDS) <= 100, f"too many commands: {len(COMMANDS)}/100"
-    for cmd, desc in COMMANDS:
-        assert 1 <= len(cmd) <= 32, f"command name length invalid: {cmd!r}"
-        assert cmd.replace("_", "").isalnum() and cmd == cmd.lower(), f"invalid command name: {cmd!r}"
-        assert 1 <= len(desc) <= 256, f"command description length invalid for {cmd!r}: {len(desc)}"
+    for label, name, short, desc, commands in (
+        ("he", NAME, SHORT_DESCRIPTION, DESCRIPTION, COMMANDS),
+        ("en", NAME_EN, SHORT_DESCRIPTION_EN, DESCRIPTION_EN, COMMANDS_EN),
+    ):
+        assert len(name) <= 64, f"[{label}] NAME too long: {len(name)}/64"
+        assert len(short) <= 120, f"[{label}] SHORT_DESCRIPTION too long: {len(short)}/120"
+        assert len(desc) <= 512, f"[{label}] DESCRIPTION too long: {len(desc)}/512"
+        assert len(commands) <= 100, f"[{label}] too many commands: {len(commands)}/100"
+        for cmd, cmd_desc in commands:
+            assert 1 <= len(cmd) <= 32, f"[{label}] command name length invalid: {cmd!r}"
+            assert cmd.replace("_", "").isalnum() and cmd == cmd.lower(), \
+                f"[{label}] invalid command name: {cmd!r}"
+            assert 1 <= len(cmd_desc) <= 256, \
+                f"[{label}] command description length invalid for {cmd!r}: {len(cmd_desc)}"
+
+    # שתי הרשימות חייבות לתאר את *אותן* פקודות — אחרת דובר אנגלית יראה
+    # תפריט אחר מדובר עברית, וזה באג שקט שקשה לשים לב אליו.
+    assert [c for c, _ in COMMANDS] == [c for c, _ in COMMANDS_EN], \
+        "COMMANDS and COMMANDS_EN list different commands"
 
 
 def _call(client: httpx.Client, method: str, payload: dict) -> None:
@@ -97,15 +151,37 @@ def _call(client: httpx.Client, method: str, payload: dict) -> None:
     logger.info("%s -> ok", method)
 
 
+def _clear_english(client: httpx.Client) -> None:
+    """
+    מוחק את גרסאות ה-"en" של הפרופיל והתפריט מטלגרם.
+
+    נדרש כי הרישום כבר בוצע פעם אחת (2026-09-14) לפני שהתמיכה באנגלית
+    כובתה. בלי המחיקה, מי שהלקוח שלו באנגלית היה ממשיך לראות תפריט
+    ותיאור באנגלית — בזמן שהבוט עצמו עונה רק בעברית. מחרוזת ריקה
+    מוחקת גרסה ספציפית-לשפה ומחזירה את ברירת המחדל (העברית).
+
+    בטוח להרצה גם אם מעולם לא נרשמה אנגלית — טלגרם מחזיר ok גם אז.
+    """
+    _call(client, "deleteMyCommands", {"language_code": "en"})
+    _call(client, "setMyDescription", {"description": "", "language_code": "en"})
+    _call(client, "setMyShortDescription", {"short_description": "", "language_code": "en"})
+    _call(client, "setMyName", {"name": "", "language_code": "en"})
+
+
 def main() -> None:
     _assert_within_limits()
     with httpx.Client() as client:
+        # ברירת המחדל (בלי language_code) — עברית. זה מה שיראה כל מי
+        # שהלקוח שלו לא באנגלית ולא בעברית.
         _call(client, "setMyName", {"name": NAME})
         _call(client, "setMyShortDescription", {"short_description": SHORT_DESCRIPTION})
         _call(client, "setMyDescription", {"description": DESCRIPTION})
         _call(client, "setMyCommands", {
             "commands": [{"command": cmd, "description": desc} for cmd, desc in COMMANDS]
         })
+
+        # אנגלית כבויה כרגע — ומנקים רישום קודם, אם היה.
+        _clear_english(client)
 
     print(
         "\nעודכן: Name / About / Description / Commands.\n"

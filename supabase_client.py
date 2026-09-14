@@ -1,6 +1,7 @@
 
 import os
 import logging
+import time
 from dataclasses import dataclass, field
 
 import httpx
@@ -10,6 +11,12 @@ load_dotenv()
 
 logger = logging.getLogger("sunsafe.supabase")
 logging.basicConfig(level=logging.INFO)
+
+# קודי סטטוס שמעידים על תקלה רגעית בצד השרת/השער, לא על בקשה שגויה —
+# ראו ההערה ב-select_rows. 5xx בלבד; 4xx לעולם לא יסתדר בניסיון חוזר.
+_TRANSIENT_STATUS = {500, 502, 503, 504}
+_READ_RETRIES = 2
+_RETRY_BACKOFF_SECONDS = 0.5
 
 
 class SupabaseError(Exception):
@@ -64,16 +71,44 @@ def select_rows(table: str, params: dict, config: "SupabaseConfig | None" = None
         "apikey": config.service_role_key,
         "Authorization": f"Bearer {config.service_role_key}",
     }
-    try:
-        response = httpx.get(url, headers=headers, params=params, timeout=10.0)
-        response.raise_for_status()
-        return response.json()
-    except httpx.HTTPStatusError as e:
-        logger.error("Supabase select from %s failed (%s): %s", table, e.response.status_code, e.response.text)
-        raise SupabaseError(f"שליפת נתונים מ-{table} נכשלה: {e.response.text}") from e
-    except httpx.RequestError as e:
-        logger.error("Supabase request to %s failed: %s", table, e)
-        raise SupabaseError(f"בקשת רשת ל-Supabase נכשלה: {e}") from e
+    # ניסיונות חוזרים על כשל חולף (נוסף 2026-09-13). המקרה שהוביל לזה:
+    # משתמש שיתף מיקום, Supabase החזיר 504 Gateway Timeout בודד על
+    # שליפת users, ופתיחת ה-session נכשלה לגמרי. 502/503/504 ותקלות
+    # רשת הם כמעט תמיד רגעיים, ושתי המתנות קצרות פותרות את הרוב.
+    #
+    # *רק קריאה* מקבלת retry, ובכוונה: select אידמפוטנטית לחלוטין.
+    # כתיבות (insert בפרט) לא חוזרות כאן — 504 אומר "השער התייאש",
+    # לא "הכתיבה לא קרתה", וניסיון שני עלול ליצור שורה כפולה.
+    last_error: Exception | None = None
+    for attempt in range(_READ_RETRIES + 1):
+        is_last = attempt == _READ_RETRIES
+        try:
+            response = httpx.get(url, headers=headers, params=params, timeout=10.0)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            last_error = e
+            if e.response.status_code not in _TRANSIENT_STATUS or is_last:
+                logger.error(
+                    "Supabase select from %s failed (%s): %s",
+                    table, e.response.status_code, e.response.text,
+                )
+                raise SupabaseError(f"שליפת נתונים מ-{table} נכשלה: {e.response.text}") from e
+        except httpx.RequestError as e:
+            last_error = e
+            if is_last:
+                logger.error("Supabase request to %s failed: %s", table, e)
+                raise SupabaseError(f"בקשת רשת ל-Supabase נכשלה: {e}") from e
+
+        logger.warning(
+            "Supabase select from %s failed transiently (attempt %s/%s): %s — retrying",
+            table, attempt + 1, _READ_RETRIES + 1, last_error,
+        )
+        time.sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
+
+    # לא אמור להגיע לכאן (הלולאה תמיד מחזירה או זורקת), אבל לא משאירים
+    # נתיב שקט שמחזיר None למי שמצפה לרשימה.
+    raise SupabaseError(f"שליפת נתונים מ-{table} נכשלה: {last_error}")
 
 
 def update_rows(table: str, params: dict, patch: dict, config: "SupabaseConfig | None" = None) -> list:
