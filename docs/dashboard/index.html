@@ -21,8 +21,63 @@
     --status-warning:  #fab219;
     --status-serious:  #ec835a;
     --status-critical: #d03b3b;
+
+    /* גוונים לכפתורי התאריכים (2026-09-14). צבעי ה-status עצמם לא
+       שמישים כדיו על רקע בהיר: #fab219 נותן יחס ניגודיות 1.62:1 מול
+       רקע הכפתור ו-#ec835a נותן 2.24:1 — הרבה מתחת ל-4.5:1 שנדרש
+       לטקסט. ה-ink-* הם אותם גוונים מוכהים עד שכולם עוברים 4.5:1,
+       בחישוב מול הרקע המשוקלל בפועל (ה-tint מעל --page). */
+    --pill-good-bg:       rgba(12,163,12,0.13);
+    --pill-good-edge:     rgba(12,163,12,0.42);
+    --pill-good-ink:      #0a7a0a;
+    --pill-warning-bg:    rgba(250,178,25,0.16);
+    --pill-warning-edge:  rgba(190,128,0,0.42);
+    --pill-warning-ink:   #986100;
+    --pill-serious-bg:    rgba(236,131,90,0.16);
+    --pill-serious-edge:  rgba(176,78,30,0.42);
+    --pill-serious-ink:   #b04e1e;
+    --pill-critical-bg:   rgba(208,59,59,0.14);
+    --pill-critical-edge: rgba(179,38,38,0.45);
+    --pill-critical-ink:  #b32626;
+
     --card-radius: 16px;
   }
+
+  /* ------------------------------------------------------------------
+     מצב נגישות — פלטה חלופית לעיוורון צבעים (2026-09-14)
+     ------------------------------------------------------------------
+     ירוק→צהוב→כתום→אדום הוא הסולם האינטואיטיבי, אבל הוא לא עובד
+     בעיוורון צבעים אדום-ירוק: ההפרש בין "בינוני" ל"בינוני-גבוה" שם הוא
+     ΔE 0.9 בדאוטרנופיה — בפועל אותו צבע. הסולם כאן (כחול → טורקיז →
+     ענבר → חלודה כהה) נבדק מול אותו ולידטור ונותן ΔE 17.7 בפרוטנופיה,
+     21.3 בטריטנופיה ו-23.3 בראייה מלאה בזוג הגרוע ביותר.
+
+     המחיר: מאבדים את "ירוק = בטוח". לכן זו לא ברירת המחדל אלא בחירה
+     של המשתמש, שנשמרת ב-localStorage.
+
+     שים לב שהמחלקה יושבת על אותם טוקנים בדיוק (--status-* ו---pill-*),
+     ולכן היא מחליפה בבת אחת גם את הכפתורים, גם את הפסים, גם את המקרא
+     וגם את האריחים — בלי שורת JS אחת שנוגעת בצבע. */
+  .viz-root[data-palette="cvd"] {
+    --status-good:     #1f6fb2;
+    --status-warning:  #35c2c2;
+    --status-serious:  #e8a020;
+    --status-critical: #8c2d04;
+
+    --pill-good-bg:       rgba(31,111,178,0.15);
+    --pill-good-edge:     rgba(31,111,178,0.45);
+    --pill-good-ink:      #1d68a7;
+    --pill-warning-bg:    rgba(53,194,194,0.15);
+    --pill-warning-edge:  rgba(32,118,118,0.45);
+    --pill-warning-ink:   #207676;
+    --pill-serious-bg:    rgba(232,160,32,0.15);
+    --pill-serious-edge:  rgba(142,98,20,0.45);
+    --pill-serious-ink:   #8e6214;
+    --pill-critical-bg:   rgba(140,45,4,0.15);
+    --pill-critical-edge: rgba(140,45,4,0.45);
+    --pill-critical-ink:  #8c2d04;
+  }
+
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) .viz-root {
       color-scheme: dark;
@@ -39,6 +94,45 @@
       --status-warning:  #fab219;
       --status-serious:  #ec835a;
       --status-critical: #d03b3b;
+
+      /* במצב כהה הבעיה הפוכה — הגוונים המוכהים של המצב הבהיר נבלעים
+         ברקע, אז כאן הדיו הוא גרסה מוארת של אותו גוון. גם כאן נבדק
+         בחישוב: כל הארבעה מעל 5.5:1 מול רקע הכפתור. */
+      --pill-good-bg:       rgba(12,163,12,0.20);
+      --pill-good-edge:     rgba(78,201,78,0.40);
+      --pill-good-ink:      #4ec94e;
+      --pill-warning-bg:    rgba(250,178,25,0.20);
+      --pill-warning-edge:  rgba(240,185,63,0.40);
+      --pill-warning-ink:   #f0b93f;
+      --pill-serious-bg:    rgba(236,131,90,0.20);
+      --pill-serious-edge:  rgba(242,145,106,0.40);
+      --pill-serious-ink:   #f2916a;
+      --pill-critical-bg:   rgba(208,59,59,0.20);
+      --pill-critical-edge: rgba(242,106,106,0.42);
+      --pill-critical-ink:  #f26a6a;
+    }
+
+    /* מצב נגישות במצב כהה. הסלקטור כאן ספציפי יותר מהבלוק שמעליו
+       (יש לו גם את מאפיין data-palette), ולכן הוא גובר עליו — וגם על
+       גרסת המצב הבהיר, שיושבת מחוץ ל-media query. */
+    :root:where(:not([data-theme="light"])) .viz-root[data-palette="cvd"] {
+      --status-good:     #1f6fb2;
+      --status-warning:  #35c2c2;
+      --status-serious:  #e8a020;
+      --status-critical: #8c2d04;
+
+      --pill-good-bg:       rgba(31,111,178,0.20);
+      --pill-good-edge:     rgba(106,169,220,0.40);
+      --pill-good-ink:      #6aa9dc;
+      --pill-warning-bg:    rgba(53,194,194,0.20);
+      --pill-warning-edge:  rgba(53,194,194,0.40);
+      --pill-warning-ink:   #35c2c2;
+      --pill-serious-bg:    rgba(232,160,32,0.20);
+      --pill-serious-edge:  rgba(232,160,32,0.40);
+      --pill-serious-ink:   #e8a020;
+      --pill-critical-bg:   rgba(140,45,4,0.30);
+      --pill-critical-edge: rgba(226,121,90,0.42);
+      --pill-critical-ink:  #e2795a;
     }
   }
 
@@ -95,6 +189,23 @@
   .who .name { font-weight: 600; font-size: 15px; }
   .who .sub { font-size: 12px; color: var(--text-muted); }
 
+  /* מתג סולם הצבעים. שטח לחיצה 36px — מעל מינימום הנגיעה הסביר בנייד,
+     שם נפתח הדשבורד ברוב המקרים. */
+  .icon-toggle {
+    width: 36px; height: 36px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border); border-radius: 50%;
+    background: transparent; color: var(--text-muted);
+    cursor: pointer; font-family: inherit; padding: 0;
+    transition: color 120ms, border-color 120ms, background 120ms;
+  }
+  .icon-toggle:hover { color: var(--text-secondary); border-color: var(--baseline); }
+  .icon-toggle[aria-pressed="true"] {
+    color: var(--series-blue); border-color: var(--series-blue);
+    background: var(--pill-good-bg);
+  }
+  .icon-toggle:focus-visible { outline: 2px solid var(--series-blue); outline-offset: 2px; }
+
   .card-head-row {
     display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
   }
@@ -118,10 +229,44 @@
   .date-pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
   .date-pill {
     border: 1px solid var(--border); background: var(--page);
-    color: var(--text-secondary); font-size: 13px; padding: 7px 14px;
+    color: var(--text-secondary); font-size: 13px; padding: 6px 14px;
     border-radius: 999px; cursor: pointer; font-family: inherit;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    line-height: 1.25;
   }
+  /* המדד היומי על הכפתור עצמו. הוא לא קישוט — הוא מה שמבדיל בין
+     "בינוני" ל-"בינוני-גבוה" למי שלא מבחין בין הצהוב לכתום. בבדיקת
+     ה-CVD ההפרש בין שני הגוונים האלה הוא ΔE 0.9 בדאוטרנופיה, כלומר
+     בפועל אותו צבע — הצבע נותן את התחושה הכללית, המספר נותן את האמת. */
+  .date-pill .pill-score {
+    font-size: 11px; font-variant-numeric: tabular-nums; font-weight: 600;
+    opacity: 0.85;
+  }
+  .date-pill.lvl-good     { background: var(--pill-good-bg);     border-color: var(--pill-good-edge);     color: var(--pill-good-ink); }
+  .date-pill.lvl-warning  { background: var(--pill-warning-bg);  border-color: var(--pill-warning-edge);  color: var(--pill-warning-ink); }
+  .date-pill.lvl-serious  { background: var(--pill-serious-bg);  border-color: var(--pill-serious-edge);  color: var(--pill-serious-ink); }
+  .date-pill.lvl-critical { background: var(--pill-critical-bg); border-color: var(--pill-critical-edge); color: var(--pill-critical-ink); }
+
+  /* כפתורי החודשים (renderMonthPills) חולקים את אותה מחלקה ואין להם
+     דרגת חשיפה — הם נשארים עם הסימון הכחול המקורי. */
   .date-pill.active { background: var(--series-blue); border-color: var(--series-blue); color: #fff; }
+
+  /* ביום צבוע הבחירה מסומנת בטבעת ולא בצביעה מחדש — אחרת לחיצה על יום
+     הייתה מוחקת בדיוק את המידע שהכפתורים האלה נועדו להראות. */
+  .date-pill.active.lvl-good,
+  .date-pill.active.lvl-warning,
+  .date-pill.active.lvl-serious,
+  .date-pill.active.lvl-critical {
+    border-color: currentColor;
+    box-shadow: 0 0 0 1px currentColor inset;
+    font-weight: 600;
+  }
+  .date-pill.active.lvl-good     { background: var(--pill-good-bg);     color: var(--pill-good-ink); }
+  .date-pill.active.lvl-warning  { background: var(--pill-warning-bg);  color: var(--pill-warning-ink); }
+  .date-pill.active.lvl-serious  { background: var(--pill-serious-bg);  color: var(--pill-serious-ink); }
+  .date-pill.active.lvl-critical { background: var(--pill-critical-bg); color: var(--pill-critical-ink); }
+  .date-pill.active .pill-score { opacity: 1; }
+  .date-pill:focus-visible { outline: 2px solid var(--series-blue); outline-offset: 2px; }
 
   table.sessions { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   table.sessions th {
@@ -216,10 +361,13 @@
   }
   .stat-tile .label { font-size: 11.5px; color: var(--text-muted); margin-bottom: 6px; }
   .stat-tile .value { font-size: 24px; font-weight: 600; color: var(--text-primary); }
-  .stat-tile .value.status-good { color: var(--status-good); }
-  .stat-tile .value.status-warning { color: #a06600; }
-  .stat-tile .value.status-serious { color: var(--status-serious); }
-  .stat-tile .value.status-critical { color: var(--status-critical); }
+  /* מספר גדול על רקע הכרטיס — משתמש ב-ink ולא בגוון הגולמי, מאותה סיבה
+     כמו בכפתורי התאריכים: הצהוב והכתום הגולמיים נופלים מתחת ל-4.5:1.
+     דרך הטוקנים, כך שמצב הנגישות מחליף גם אותם. */
+  .stat-tile .value.status-good { color: var(--pill-good-ink); }
+  .stat-tile .value.status-warning { color: var(--pill-warning-ink); }
+  .stat-tile .value.status-serious { color: var(--pill-serious-ink); }
+  .stat-tile .value.status-critical { color: var(--pill-critical-ink); }
 
   /* horizontal exposure bars — one row per session, longest bar = highest
      exposure score. שורות ולא עמודות, לפי בקשת המשתמש (2026-09-09):
@@ -365,7 +513,25 @@
         <div class="name" id="display-name">—</div>
         <div class="sub" id="display-sub">—</div>
       </div>
+      <!-- מחליף את סולם הצבעים לגרסה שמובחנת בעיוורון צבעים. aria-pressed
+           (ולא checkbox) כי זה מתג שמשנה את המראה של הדף עצמו, ו-title
+           נושא את ההסבר — האייקון לבדו לא אומר כלום למי שלא מכיר אותו. -->
+      <button
+        type="button"
+        id="palette-toggle"
+        class="icon-toggle"
+        aria-pressed="false"
+        title="סולם צבעים מותאם לעיוורון צבעים"
+        aria-label="סולם צבעים מותאם לעיוורון צבעים">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+             stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"></circle>
+          <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"></path>
+        </svg>
+      </button>
     </div>
+
   </div>
 
   <div class="card">
@@ -894,17 +1060,53 @@
    * שהמשתמש יראה את אותו דבר בשני המקומות.
    */
   function skinTypeLabel(n) {
-    const names = ["", "בהיר מאוד", "בהיר", "בינוני", "זיתי", "חום", "כהה מאוד"];
+    const names = ["", "בהיר מאוד", "בהיר", "בינוני", "זית", "חום", "כהה מאוד"];
     return names[n] ? `סוג עור ${n} · ${names[n]}` : `סוג עור ${n}`;
+  }
+
+  /**
+   * מדד החשיפה של יום שלם — המקסימום מבין ה-sessions של אותו יום.
+   *
+   * *חייב* להיות אותו מספר שמופיע באריח "מדד חשיפה מרבי" ב-renderAnalysis
+   * (שם: Math.max(...scores)). אם שניהם יתפצלו, כפתור יצבע אדום והלוח
+   * שנפתח בלחיצה עליו יראה מספר אחר — וזה גרוע מלא לצבוע בכלל. מחזיר
+   * null ליום בלי sessions סגורים, ואז הכפתור נשאר ניטרלי.
+   */
+  function dayScoreOf(dateStr) {
+    const scores = currentUser.sessions
+      .filter(s => s.date === dateStr)
+      .map(s => scoreOf(s))
+      .filter(n => Number.isFinite(n));
+    return scores.length ? Math.max(...scores) : null;
   }
 
   function renderDatePills(dates) {
     const wrap = document.getElementById("date-pills");
     wrap.innerHTML = "";
     dates.forEach(d => {
+      const score = dayScoreOf(d);
+      const status = score === null ? null : scoreToStatus(score);
+
       const pill = document.createElement("button");
-      pill.className = "date-pill" + (d === currentDate ? " active" : "");
-      pill.textContent = formatDate(d);
+      pill.className = "date-pill"
+        + (status ? ` lvl-${status}` : "")
+        + (d === currentDate ? " active" : "");
+
+      const label = document.createElement("span");
+      label.textContent = formatDate(d);
+      pill.appendChild(label);
+
+      if (score !== null) {
+        const value = document.createElement("span");
+        value.className = "pill-score";
+        value.textContent = `${score}%`;
+        pill.appendChild(value);
+        // הצבע הוא רמז מהיר בלבד; התווית המילולית היא מה שהופך אותו
+        // לקריא — גם בהקראה וגם למי שלא מבחין בין הגוונים.
+        pill.title = `${formatDate(d)} — חשיפה ${score}%, ${STATUS[status].label}`;
+        pill.setAttribute("aria-label", pill.title);
+      }
+
       pill.addEventListener("click", () => {
         currentDate = d;
         renderDatePills(dates);
@@ -1264,6 +1466,47 @@
       setBusy("delete-confirm-btn", false, "מוחק...", "מחיקה");
     }
   }
+
+  // ---------------------------------------------------------------
+  // מתג סולם הצבעים
+  // ---------------------------------------------------------------
+  // הבחירה נשמרת ב-localStorage, אבל *כל* גישה עטופה ב-try/catch:
+  // בחלון פרטי, או כשחסימת עוגיות-צד-שלישי חוסמת אחסון, הגישה זורקת —
+  // ודף שקורס על העדפת צבע הוא באג הרבה יותר גרוע מהעדפה שלא נזכרת.
+  const PALETTE_KEY = "sunsafe:palette";
+
+  function readStoredPalette() {
+    try {
+      return localStorage.getItem(PALETTE_KEY);
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function applyPalette(mode) {
+    // מוחל על כל שורשי ה-viz-root, כולל מסך הכניסה והמודאלים — אחרת
+    // טופס העריכה היה נפתח עם הפלטה השנייה.
+    document.querySelectorAll(".viz-root").forEach(el => {
+      if (mode === "cvd") el.setAttribute("data-palette", "cvd");
+      else el.removeAttribute("data-palette");
+    });
+    const btn = document.getElementById("palette-toggle");
+    if (btn) btn.setAttribute("aria-pressed", mode === "cvd" ? "true" : "false");
+  }
+
+  applyPalette(readStoredPalette() === "cvd" ? "cvd" : "default");
+
+  document.getElementById("palette-toggle").addEventListener("click", () => {
+    const next = document.getElementById("palette-toggle").getAttribute("aria-pressed") === "true"
+      ? "default"
+      : "cvd";
+    applyPalette(next);
+    try {
+      localStorage.setItem(PALETTE_KEY, next);
+    } catch (err) {
+      /* ההעדפה פשוט לא תישמר לפעם הבאה. לא שווה הודעת שגיאה. */
+    }
+  });
 
   document.getElementById("add-session-btn").addEventListener("click", openAddModal);
   document.getElementById("empty-add-btn").addEventListener("click", openAddModal);
