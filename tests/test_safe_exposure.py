@@ -87,19 +87,48 @@ for uv in (0.5, 1, 2, 3, 4, 5, 6.3, 7.6, 9, 11, 13):
         line = bc.safe_exposure_line(uv, st)
         if not line:
             continue
-        # כל אזכור של קרם הגנה בשורה חייב או לא לנקוב בזמן, או לנקוב
-        # בזמן שאינו עולה על מרווח המריחה החוזרת.
-        spf_minutes = safe_exposure_minutes(uv, st, 30)
-        if spf_minutes > bc.SUNSCREEN_REAPPLY_MINUTES:
-            # מעל תקרת המריחה החוזרת אסור לנקוב במספר כלל.
-            if "מאריך את הזמן הזה —" not in line:
-                over_promises.append((uv, st, line))
-check("no output ever promises more sunscreen time than the reapply interval",
+        # **שום פלט לא נוקב בזמן ארוך ממרווח המריחה החוזרת.** הבדיקה
+        # נוסחה מחדש ב-16.9.2026 מול המבנה ולא מול מחרוזת: הנוסח שונה
+        # (השורה השנייה נותנת עכשיו SPF מומלץ במקום "מאריך את הזמן
+        # הזה"), אבל הכלל שהיא שומרת עליו זהה.
+        #
+        # format_duration_he מייצר "שעות" בלשון רבים לכל משך מעל
+        # שעתיים ("כ-3 שעות"), ו-"כשעתיים" בדיוק לשעתיים. לכן אזכור
+        # של "שעות" בשורה הוא בהכרח הבטחה מעל התקרה. זה תפס באמת:
+        # התקרה הוחלה רק על הזמן *עם* הקרם, וב-UV 0.5 עם סוג עור 6
+        # ההודעה נקבה ב-"כ-26 שעות ו-40 דקות בשמש ישירה".
+        if "שעות" in line:
+            over_promises.append((uv, st, line))
+check("no output ever quotes a time longer than the reapply interval",
       not over_promises, f"-> {over_promises[:2]}")
 
-check("every line carries the two-hour reapply interval",
-      all("כל שעתיים" in (bc.safe_exposure_line(uv, st) or "כל שעתיים")
-          for uv in (1, 6.3, 11) for st in range(1, 7)))
+# וכל שורה שכן ממליצה על קרם חייבת לנקוב במרווח המריחה במפורש —
+# "בתום השעתיים", לא "בהתאם לצורך". הענף שאומר שלא צריך קרם בכלל
+# פטור, כי אין מה למרוח מחדש.
+missing_interval = [
+    (uv, st, line)
+    for uv in (1, 6.3, 11) for st in range(1, 7)
+    if (line := bc.safe_exposure_line(uv, st)) and "SPF" in line
+    and "בתום השעתיים" not in line
+]
+check("every sunscreen recommendation states the reapply interval",
+      not missing_interval, f"-> {missing_interval[:2]}")
+
+check("and none of them hedges with 'as needed'",
+      not [1 for uv in (1, 6.3, 11) for st in range(1, 7)
+           if "בהתאם לצורך" in (bc.safe_exposure_line(uv, st) or "")])
+
+# ההמלצה עצמה: רצפה של SPF 30, והמתמטיקה רק מעלה.
+from geo_uv_core import spf_needed_for, spf_on_shelf
+check("the recommendation never falls below SPF 30",
+      all(spf_on_shelf(spf_needed_for(uv, st, 120)) in (0, 30, 50, None)
+          for uv in (0.5, 1, 3, 6.3, 9, 11, 13) for st in range(1, 7)))
+check("fairer skin at high UV needs a higher SPF than darker skin",
+      spf_on_shelf(spf_needed_for(11, 1, 120)) > spf_on_shelf(spf_needed_for(11, 6, 120)))
+check("UV 0 has nothing to recommend", spf_needed_for(0, 3, 120) is None)
+check("and two hours is always coverable by something sold",
+      all(spf_on_shelf(spf_needed_for(uv, st, 120)) is not None
+          for uv in (0.5, 3, 6.3, 9, 11, 13) for st in range(1, 7)))
 
 # הניסוח נכתב מחדש ב-2026-09-15 (ראו ההודעה הראשונה שנשלחה בפועל).
 # הבדיקה נועלת את החלק שאסור להתרכך בעריכות עתידיות: מרווח מפורש,

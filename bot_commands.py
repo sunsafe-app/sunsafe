@@ -42,6 +42,9 @@ from supabase_client import SupabaseError, delete_rows, insert_row, select_rows,
 from geo_uv_core import (
     calculate_exposure_score,
     safe_exposure_minutes,
+    spf_needed_for,
+    spf_on_shelf,
+    SUNSCREEN_HORIZON_MINUTES,
     daily_exposure_score,
     daily_summary_he,
     geocode_city,
@@ -348,17 +351,37 @@ def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
     if bare is None:
         return None
 
-    with_spf = safe_exposure_minutes(uv_index, skin_type, 30)
-    if with_spf and with_spf > SUNSCREEN_REAPPLY_MINUTES:
-        # לא נוקבים במספר שגדול מזמן המריחה החוזרת — ראו ההערה למעלה.
-        spf_part = "קרם הגנה מאריך את הזמן הזה"
+    # 16.9.2026: במקום "קרם הגנה מאריך את הזמן הזה" — *איזה* קרם.
+    # זו השאלה שהמשתמש שואל לפני שהוא יוצא, והנוסחה יודעת לענות עליה
+    # בהיפוך (ראו spf_needed_for ב-geo_uv_core). אופק של שעתיים קבוע
+    # ולא שאלה למשתמש: מעבר לשעתיים אי אפשר לסמוך על מריחה אחת בכל
+    # מקרה, אז זה גם הטווח שיש לו משמעות וגם אפס חיכוך נוסף.
+    shelf = spf_on_shelf(spf_needed_for(uv_index, skin_type, SUNSCREEN_HORIZON_MINUTES))
+    if shelf == 0:
+        spf_part = "בשמש הזו לא תצטרכו קרם הגנה לשעתיים הקרובות."
+    elif shelf is None:
+        # לא נדרך בטווח של שעתיים — ראו ההערה ב-spf_on_shelf.
+        spf_part = (
+            "בשמש הזו קרם הגנה לבדו לא יכסה שעתיים עבור סוג העור שלכם.\n"
+            "צל, כובע וחולצה — או לחזור בשעה מתקדמת יותר."
+        )
     else:
-        spf_part = f"קרם הגנה מאריך את הזמן הזה ל{format_duration_he(with_spf)}"
+        spf_part = f"לשעתיים בשמש תצטרכו SPF {shelf}, ולמרוח מחדש בתום השעתיים."
 
+    # **תקרת השעתיים חלה גם על המספר החשוף** (16.9.2026). היא הוחלה
+    # עד כה רק על הזמן עם הקרם, וכך ב-UV 0.5 עם סוג עור 6 ההודעה
+    # נקבה ב-"כ-26 שעות ו-40 דקות בשמש ישירה". אף פלט לא אמור להבטיח
+    # זמן ארוך ממרווח המריחה החוזרת: ה-UV משתנה במשך היום, והמספר
+    # מחושב על ה-UV של הרגע הזה בלבד. עד לשינוי הזה השורה השנייה
+    # לפחות הזכירה "לחדש כל שעתיים" — היא הוחלפה, וה-26 שעות נשארו
+    # לבד ובלי הסתייגות.
+    bare_part = (
+        "יותר משעתיים" if bare > SUNSCREEN_HORIZON_MINUTES else format_duration_he(bare)
+    )
     return (
-        f"לפי סוג העור שלכם, {format_duration_he(bare)} בשמש ישירה "
-        "עד סיכון לכוויה, בלי הגנה.\n"
-        f"{spf_part} — אבל חשוב למרוח כמות מספקת, ולחדש כל שעתיים."
+        f"לפי סוג העור שלכם, {bare_part} בשמש ישירה "
+        "עד סיכון לכוויה ללא קרם הגנה.\n"
+        f"{spf_part}"
     )
 
 
@@ -824,6 +847,19 @@ def handle_start(chat_id: int, username: str, args: str, lang: str = i18n.DEFAUL
     # כלום ומציל את המקרה. ראו _pending_skin_type_pick והניתוב ב-handle_update.
     _mark_pending_skin_type_pick(username)
     logger.info("Sent welcome message + skin-type picker to @%s", username)
+
+
+def handle_help(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+    """
+    /help — רשימת הפקודות, סטטית.
+
+    נוסף 16.9.2026. עד אז "/help" לא היה רשום, ולכן עבר בגייטקיפר
+    ונותב ל-Agent Loop: Gemini חיבר טקסט עזרה בזמן אמת, שונה בכל
+    הרצה, חסר ארבע פקודות, ובעלות של שלוש קריאות מודל. ראו ההערה
+    ליד "help" ב-i18n.py.
+    """
+    send_message(chat_id, t("help", lang))
+    logger.info("Sent help to @%s", username)
 
 
 def handle_dashboard(chat_id: int, username: str) -> None:
@@ -2377,6 +2413,7 @@ def handle_moved_to_dashboard(chat_id: int, username: str, args: str) -> None:
 # שהזרימה החדשה תרוץ בפרודקשן ותוכיח את עצמה.
 COMMAND_HANDLERS = {
     "/start": handle_start,
+    "/help": handle_help,
     "/dashboard": lambda chat_id, username, args: handle_dashboard(chat_id, username),
     "/set_skin_type": handle_set_skin_type,
     "/start_session": handle_start_session,

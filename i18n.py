@@ -108,6 +108,55 @@ def resolve_language(text: str | None = None) -> str:
 # ---------------------------------------------------------------------
 STRINGS: dict[str, dict[str, str]] = {
     # --- /start ---
+    # נוסף 16.9.2026. עד אז "/help" לא היה ב-COMMAND_HANDLERS בכלל, ולכן
+    # עבר דרך הגייטקיפר ונותב ל-Agent Loop — כלומר Gemini המציא את טקסט
+    # העזרה בזמן אמת. נצפה בפועל: התשובה הייתה סבירה אבל השמיטה את
+    # /today, /my_sessions, /offline_session ו-/diagnose_skin, והיא
+    # שונה בכל הרצה. טקסט עזרה שמשתנה בכל פעם, שעלול להמציא פקודה
+    # שלא קיימת, ושעולה שלוש קריאות Gemini מתוך 15 לדקה — בשביל
+    # מחרוזת שלא משתנה.
+    #
+    # למה זה לא סותר את ההחלטה מ-12.9 להסיר את רשימת הפקודות מ-/start:
+    # שם היא הוצגה למי שלא ביקש אותה ולפני שעשה משהו. כאן המשתמש
+    # ביקש במפורש.
+    "help": {
+        "he": (
+            "☀️ SunSafe — מעקב חשיפה לשמש\n\n"
+            "היומיום:\n"
+            "/start_session <עיר> — פותח מעקב. אפשר גם לשתף מיקום.\n"
+            "/end_session [SPF] — סוגר אותו ומחשב את החשיפה.\n"
+            "/dashboard — האזור האישי: היסטוריה, גרפים ועריכה.\n\n"
+            "עוד:\n"
+            "/today — סיכום היום, כולל השוואה מול SPF קבוע.\n"
+            "/my_sessions — ה-sessions האחרונים שלכם.\n"
+            "/offline_session — לתעד חשיפה בדיעבד, בלי קליטה.\n"
+            "/diagnose_skin — בדיקת סימני כוויה מתצלום.\n"
+            "/set_skin_type <1-6> — לעדכן סוג עור.\n"
+            "/start — להתחיל מחדש ולבחור סוג עור.\n\n"
+            "ואפשר גם פשוט לשאול: \"מה ה-UV בתל אביב?\", "
+            "\"מה היה ה-UV במצפה רמון אתמול?\"\n\n"
+            "לבחירת קרם הגנה ספציפי — במיוחד אם יש רגישות או מצב עור — "
+            "כדאי לשאול רוקח או רופא עור. אני נותן SPF מומלץ, לא מוצר."
+        ),
+        "en": (
+            "☀️ SunSafe — sun exposure tracking\n\n"
+            "Every day:\n"
+            "/start_session <city> — start tracking. You can share a location instead.\n"
+            "/end_session [SPF] — close it and get your exposure.\n"
+            "/dashboard — your history, charts and edits.\n\n"
+            "More:\n"
+            "/today — today's summary.\n"
+            "/my_sessions — your recent sessions.\n"
+            "/offline_session — log exposure after the fact, with no signal.\n"
+            "/diagnose_skin — check a photo for burn signs.\n"
+            "/set_skin_type <1-6> — update your skin type.\n"
+            "/start — start over and pick a skin type.\n\n"
+            "You can also just ask: \"What's the UV in Tel Aviv?\"\n\n"
+            "For choosing a specific sunscreen — especially with a skin condition "
+            "or sensitivity — ask a pharmacist or a dermatologist. I give a "
+            "recommended SPF, not a product."
+        ),
+    },
     "welcome": {
         "he": (
             "☀️ ברוכים הבאים ל-SunSafe!\n\n"
