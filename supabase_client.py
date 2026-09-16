@@ -40,6 +40,22 @@ class SupabaseConfig:
 
 
 def insert_row(table: str, row: dict, config: "SupabaseConfig | None" = None) -> dict:
+    """
+    Insert one row, e.g. insert_row("exposure_log", {...}).
+    Returns the inserted row as PostgREST returns it.
+
+    16.9.2026: עד לתאריך הזה זו הייתה הפונקציה היחידה בקובץ עם
+    raise_for_status() חשוף, בלי לוג ובלי SupabaseError — כלומר נתיב
+    הכתיבה שפותח sessions היה היחיד שלא יכול היה להגיד *למה* הוא נכשל.
+    בפרודקשן זה נראה כך:
+
+        httpx.HTTPStatusError: Client error '400 Bad Request' for url
+        '.../rest/v1/exposure_log'
+
+    ו-400 מ-PostgREST *תמיד* מסביר את עצמו בגוף התשובה ({"code","message",
+    "details","hint"}) — עמודה שלא קיימת, NOT NULL, הפרת check. הגוף הזה
+    נזרק לפח, והמשתמש קיבל שתיקה. עכשיו זה מתנהג כמו כל השאר בקובץ.
+    """
     config = config or SupabaseConfig.from_env()
     url = f"{config.url.rstrip('/')}/rest/v1/{table}"
     headers = {
@@ -48,14 +64,23 @@ def insert_row(table: str, row: dict, config: "SupabaseConfig | None" = None) ->
         "Content-Type": "application/json",
         "Prefer": "return=representation",
     }
-    response = httpx.post(url, headers=headers, json=row, timeout=10.0)
-    response.raise_for_status()
+    try:
+        response = httpx.post(url, headers=headers, json=row, timeout=10.0)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        # שמות העמודות נכנסים ללוג, הערכים לא: השורה יכולה להכיל מיקום
+        # מדויק של משתמש, וללוגים של ה-Space יש גישה רחבה יותר מל-DB.
+        logger.error(
+            "Supabase insert into %s failed (%s) with columns %s: %s",
+            table, e.response.status_code, sorted(row), e.response.text,
+        )
+        raise SupabaseError(f"כתיבת שורה ל-{table} נכשלה: {e.response.text}") from e
+    except httpx.RequestError as e:
+        logger.error("Supabase request to %s failed: %s", table, e)
+        raise SupabaseError(f"בקשת רשת ל-Supabase נכשלה: {e}") from e
+
     inserted = response.json()
     return inserted[0] if isinstance(inserted, list) else inserted
-
-
-
-import httpx
 
 
 def select_rows(table: str, params: dict, config: "SupabaseConfig | None" = None) -> list:

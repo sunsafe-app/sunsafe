@@ -156,7 +156,11 @@ async function closeSession(env: Env, session: SessionRow, now: Date): Promise<b
     `users?telegram_username=eq.${encodeURIComponent(username)}&select=chat_id,skin_type`,
   );
   const chatId = users[0]?.chat_id ?? null;
-  const skinType = users[0]?.skin_type ?? 3;
+  // 1 ולא 3 (שונה 16.9.2026) — סוג עור 1 נותן את תקציב הזמן הקצר
+  // ביותר, וזו ההנחה הנכונה כשאין שורת users. אותו שינוי בוצע ב-
+  // handle_end_session בפייתון; שני המימושים חייבים להסכים, אחרת
+  // session שנסגר אוטומטית יקבל ציון שונה מאחד שנסגר ידנית.
+  const skinType = users[0]?.skin_type ?? 1;
 
   const start = new Date(session.start_time);
   const durationMinutes = (now.getTime() - start.getTime()) / 60000;

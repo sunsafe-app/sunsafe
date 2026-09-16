@@ -42,6 +42,7 @@ from geo_uv_core import (
     safe_exposure_minutes,
     geocode_city,
     get_current_uv,
+    UvUnavailableError,
     _nominatim_forward_geocode,
     _text_matches,
     GEOCODING_URL,
@@ -1650,7 +1651,12 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
 
     session = open_sessions[0]
     users = select_rows("users", {"telegram_username": f"eq.{username}"})
-    skin_type = users[0]["skin_type"] if users else 3  # ברירת מחדל זהירה אם חסר, לא אמור לקרות
+    # 1 ולא 3 (שונה 16.9.2026): 3 הוא *אמצע* הסולם, לא ברירת מחדל
+    # זהירה — ההערה שהייתה כאן קראה לו כך בטעות. סוג עור 1 נשרף
+    # הכי מהר (factor 0.5), כלומר הוא נותן את תקציב הזמן הקצר ביותר.
+    # באפליקציית בטיחות, כשלא יודעים מי המשתמש, מניחים את מי שנשרף
+    # ראשון — שגיאה לכיוון "תמרח קרם" עדיפה על שגיאה לכיוון "אתה בסדר".
+    skin_type = users[0]["skin_type"] if users else 1
 
     start_time = datetime.fromisoformat(session["start_time"])
     end_time = datetime.now(timezone.utc)
@@ -2283,7 +2289,7 @@ def handle_edit_session(chat_id: int, username: str, args: str) -> None:
             send_message(chat_id, "שעת הסיום לא יכולה להיות לפני שעת ההתחלה.")
             return
         users = select_rows("users", {"telegram_username": f"eq.{username}"})
-        skin_type = users[0]["skin_type"] if users else 3
+        skin_type = users[0]["skin_type"] if users else 1  # ראו ההסבר ב-handle_end_session
         patch["exposure_score"] = calculate_exposure_score(
             session["uv_index"], duration_minutes, skin_type, effective_spf
         )
@@ -2499,11 +2505,37 @@ def _handler_takes_lang(handler) -> bool:
 
 
 def _dispatch(handler, chat_id: int, username: str, args: str, lang: str) -> None:
-    """קורא ל-handler, ומעביר lang רק אם הוא יודע לקבל אותו."""
-    if _handler_takes_lang(handler):
-        handler(chat_id, username, args, lang=lang)
-    else:
-        handler(chat_id, username, args)
+    """
+    קורא ל-handler, ומעביר lang רק אם הוא יודע לקבל אותו.
+
+    16.9.2026: כל חריגה מ-handler הגיעה עד ה-except של poll_forever,
+    שרשם "Failed to handle update" ללוג — ולמשתמש לא נשלח *שום דבר*.
+    כלומר כל תקלה בצד שלנו נראתה למשתמש כמו בוט שפשוט מתעלם ממנו.
+    נצפה בפועל כשה-UV חזר null מ-Open-Meteo ו-/start_session נפל על
+    400 מ-Supabase: שלוש הודעות, אפס תשובות. הלוג נשאר בדיוק כשהיה
+    (poll_forever עוד רושם exception), רק שעכשיו גם עונים.
+    """
+    try:
+        if _handler_takes_lang(handler):
+            handler(chat_id, username, args, lang=lang)
+        else:
+            handler(chat_id, username, args)
+    except UvUnavailableError:
+        logger.exception("No UV value available for @%s", username)
+        send_message(
+            chat_id,
+            "לא הצלחתי לקבל את מדד ה-UV לנקודה הזו כרגע — זו תקלה בשירות "
+            "מזג האוויר, לא אצלכם. נסו שוב בעוד כמה דקות.",
+        )
+    except Exception:
+        # מכוון רחב: עדיף הודעה גנרית על שתיקה. ה-exception ממשיך ללוג
+        # דרך logger.exception כאן, אז שום מידע לא נאבד לדיבוג.
+        logger.exception("Handler failed for @%s (args=%r)", username, args)
+        send_message(
+            chat_id,
+            "משהו נשבר אצלי בדרך לתשובה. נסו שוב, ואם זה חוזר — זו תקלה "
+            "אצלנו ולא אצלכם.",
+        )
 
 
 def handle_callback_query(callback_query: dict) -> None:

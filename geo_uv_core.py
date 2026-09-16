@@ -20,7 +20,12 @@ SunSafe — geocoding + UV + exposure-score core logic
 Desktop, לבדיקה ידנית) בלי צורך בכל הסודות שהבוט המלא דורש.
 """
 
+import logging
+from datetime import datetime, timezone
+
 import httpx
+
+logger = logging.getLogger("sunsafe.geo_uv_core")
 
 # --- Open-Meteo (geocoding + UV, בלי API key) ---------------------------
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -225,14 +230,77 @@ def geocode_city(client: httpx.Client, city_name: str) -> dict:
 # דרך log_uv_reading). לא היו זהות-לגמרי גם לפני האיחוד — רק גרות
 # באותו מקום מעכשיו במקום כל אחת בקובץ נפרד.
 # ---------------------------------------------------------------------
+class UvUnavailableError(Exception):
+    """Open-Meteo ענה 200 אבל בלי מדד UV שאפשר להשתמש בו."""
+
+
+def _nearest_hourly_uv(hourly: dict, now: datetime) -> float | None:
+    """
+    הערך ההשעתי הקרוב ביותר ל-now, מדלג על שעות שבהן הערך null.
+    הזמנים מגיעים כ-ISO בלי אזור זמן כי אנחנו מבקשים timezone=UTC.
+    """
+    times = (hourly or {}).get("time") or []
+    values = (hourly or {}).get("uv_index") or []
+    best: tuple[float, float] | None = None  # (מרחק בשניות, ערך)
+    for stamp, value in zip(times, values):
+        if value is None:
+            continue
+        try:
+            moment = datetime.fromisoformat(stamp).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        distance = abs((moment - now).total_seconds())
+        if best is None or distance < best[0]:
+            best = (distance, float(value))
+    return None if best is None else best[1]
+
+
 def get_current_uv(client: httpx.Client, lat: float, lon: float) -> float:
+    """
+    מדד ה-UV הנוכחי בנקודה. מחזירה תמיד float, או זורקת
+    UvUnavailableError — **לעולם לא None**.
+
+    16.9.2026: הגרסה הקודמת הייתה `return response.json()["current"]["uv_index"]`
+    בלי שום בדיקה. Open-Meteo מחזיר לפעמים 200 עם `"uv_index": null`
+    בבלוק current (פער בנתוני המודל), ואז None זרם הלאה ל-insert_row
+    ונכתב לעמודה שמוגדרת `double precision not null` — 400 Bad Request
+    מ-Supabase, traceback בלוגים, והמשתמש קיבל שתיקה מוחלטת על
+    /start_session. נצפה בפועל ב-11:56 על "חיפה", שעתיים אחרי ש-session
+    זהה נפתח בהצלחה: לא הקוד השתנה, התשובה מ-Open-Meteo השתנתה.
+    לכן גם מבקשים hourly באותה קריאה — נפילה חזרה לשעה הקרובה ביותר
+    עדיפה על חסימת ה-session, וזו אותה סדרה שמשמשת את /end_session
+    לממוצע המשוקלל.
+    """
     response = client.get(
         OPEN_METEO_URL,
-        params={"latitude": lat, "longitude": lon, "current": "uv_index"},
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "current": "uv_index",
+            "hourly": "uv_index",
+            "forecast_days": 1,
+            "timezone": "UTC",
+        },
         timeout=10.0,
     )
     response.raise_for_status()
-    return response.json()["current"]["uv_index"]
+    body = response.json()
+
+    current = (body.get("current") or {}).get("uv_index")
+    if current is not None:
+        return float(current)
+
+    fallback = _nearest_hourly_uv(body.get("hourly") or {}, datetime.now(timezone.utc))
+    if fallback is not None:
+        logger.warning(
+            "Open-Meteo returned a null current UV for %s,%s — falling back to the "
+            "nearest hourly value (%s)", lat, lon, fallback,
+        )
+        return fallback
+
+    raise UvUnavailableError(
+        f"Open-Meteo returned no usable UV value for {lat},{lon}"
+    )
 
 
 def fetch_current_weather(client: httpx.Client, lat: float, lon: float) -> dict:

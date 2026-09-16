@@ -138,3 +138,31 @@ alter table skin_damage_log enable row level security;
 
 alter table exposure_log add column if not exists lat double precision;
 alter table exposure_log add column if not exists lon double precision;
+-- SunSafe — Supabase schema (sixth slice: skin_type ב-exposure_log —
+-- 2026-09-16)
+--
+-- באג אמיתי בפרודקשן, והוא נראה כך: ב-11:55:25 עלה ל-HF Space קוד
+-- שמוסיף "skin_type" ל-payload של ה-insert ל-exposure_log (שני מקומות
+-- ב-bot_commands.py — _begin_session ונתיב ה-session הידני). העמודה
+-- מעולם לא נוספה לטבלה, וב-11:56:15 הבקשה הראשונה נפלה:
+--
+--   /start_session חיפה
+--   httpx.HTTPStatusError: Client error '400 Bad Request' for url
+--   '.../rest/v1/exposure_log'
+--
+-- PostgREST דוחה insert שמזכיר עמודה שלא קיימת (PGRST204). ב-09:40
+-- באותו בוקר session זהה נפתח בהצלחה — הקוד הוא שהשתנה, לא הנתונים.
+--
+-- **למה העמודה נחוצה בכלל:** עד כה /end_session שלף את סוג העור מ-
+-- users בזמן הסגירה. אם המשתמש שינה את סוג העור *באמצע* ה-session,
+-- הציון חושב לפי הסוג החדש על חשיפה שנמדדה לפי הישן. שמירת סוג העור
+-- על השורה בזמן הפתיחה נועלת את הקלט שלפיו הציון יחושב.
+--
+-- nullable בכוונה: 176 השורות ההיסטוריות נשארות בלי הערך, ו-
+-- handle_end_session נופל בחזרה ל-users כשהוא חסר. אותו check
+-- constraint כמו ב-users, כדי ששתי הטבלאות לא יסכימו על טווח שונה.
+
+alter table exposure_log add column if not exists skin_type smallint;
+alter table exposure_log drop constraint if exists exposure_log_skin_type_check;
+alter table exposure_log add constraint exposure_log_skin_type_check
+    check (skin_type is null or skin_type between 1 and 6);
