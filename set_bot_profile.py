@@ -36,11 +36,10 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 # --- תוכן, בעברית (כמו שאר הבוט) -------------------------------------
-NAME = "SunSafe – עוזר הגנה מהשמש ☀️"
+NAME = "SunSafe – הגנה חכמה מהשמש 🌞"
 
 SHORT_DESCRIPTION = (
-    "🌞 עוקב אחרי חשיפה שלכם ל-UV לאורך היום ומזכיר מתי להתגונן. "
-    "שלחו /start כדי להתחיל."
+    "עוקב אחרי החשיפה שלכם לשמש לאורך היום ומזכיר מתי להתגונן.   שלחו /start כדי להתחיל."
 )
 
 DESCRIPTION = (
@@ -185,7 +184,7 @@ def main() -> None:
 
     print(
         "\nעודכן: Name / About / Description / Commands.\n"
-        "מה שנשאר לעשות ידנית ב-BotFather (/mybots -> Edit @gil612Bot info) —\n"
+        "מה שנשאר לעשות ידנית ב-BotFather (/mybots -> Edit @SunSafeAppBot info) —\n"
         "אין להם API בכלל:\n"
         "  • Botpic — Edit Botpic, להעלות תמונת פרופיל לבוט\n"
         "  • Description picture — Edit Description Picture (אופציונלי)\n"

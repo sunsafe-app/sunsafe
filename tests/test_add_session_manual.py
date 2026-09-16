@@ -220,13 +220,32 @@ with patch.object(bc, "send_message", fake_send_message), \
         check("add_session: midnight rollover -> end is next day", end_dt.date() == start_dt.date() + timedelta(days=1), f"-> start={start_dt} end={end_dt}")
         check("add_session: midnight rollover duration = 45min", (end_dt - start_dt).total_seconds() / 60 == 45, f"-> {(end_dt - start_dt).total_seconds() / 60}")
 
-    # end בעתיד -> נדחה, בלי insert
+    # end בעתיד -> נדחה, בלי insert.
+    #
+    # ה"עכשיו" מוקפא כאן בכוונה (2026-09-12): הגרסה הקודמת בנתה את
+    # השעות מ-datetime.now() + 5/6 שעות והעבירה רק %H:%M בלי date=,
+    # כלומר אחרי ~18:00 UTC ה"עתיד" חצה חצות והתפרש כשעה *מוקדמת היום*
+    # — שהיא בעבר. הבדיקה נכשלה בערבים והצליחה בבקרים, בלי שום קשר
+    # לקוד. date= לא יכול לפתור את זה (הוא מגלגל שנה אחורה לתאריך
+    # "עתידי", בכוונה), אז מקפיאים את השעון במקום.
     sent_messages.clear()
     inserted_rows.clear()
-    future_start = (datetime.now(timezone.utc) + timedelta(hours=5)).strftime("%H:%M")
-    future_end = (datetime.now(timezone.utc) + timedelta(hours=6)).strftime("%H:%M")
-    bc.handle_add_session(123, "gil612", f"תל אביב start={future_start} end={future_end} uv=3")
-    check("add_session: future end_time rejected", len(inserted_rows) == 0 and any("בעתיד" in m for m in sent_messages), f"-> {sent_messages}")
+
+    class _FixedNow(datetime):
+        """datetime אמיתי לכל דבר, רק עם now() קבוע — כדי ש-fromisoformat
+        וחשבון התאריכים בתוך handle_add_session ימשיכו לעבוד כרגיל."""
+
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 12, 8, 0, tzinfo=tz or timezone.utc)
+
+    with patch.object(bc, "datetime", _FixedNow):
+        bc.handle_add_session(123, "gil612", "תל אביב start=13:00 end=14:00 uv=3")
+    check(
+        "add_session: future end_time rejected",
+        len(inserted_rows) == 0 and any("בעתיד" in m for m in sent_messages),
+        f"-> {sent_messages}",
+    )
 
     # חסר start/end -> הודעת שימוש, בלי insert
     sent_messages.clear()

@@ -39,6 +39,7 @@ from skin_damage_classifier import (
 from supabase_client import SupabaseError, delete_rows, insert_row, select_rows, update_rows, upsert_row
 from geo_uv_core import (
     calculate_exposure_score,
+    safe_exposure_minutes,
     geocode_city,
     get_current_uv,
     _nominatim_forward_geocode,
@@ -80,6 +81,24 @@ BOT_TOKEN = os.environ["BOT_TOKEN"]
 # הודעה כלשהי לבוט ואז ראו את chat_id בטבלת users (עמודת chat_id) מול
 # ה-telegram_username שלכם.
 ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID")
+
+# שיקוף שיחות המשתמשים לצ'אט האדמין — **כבוי כברירת מחדל** (2026-09-14).
+#
+# המראה נבנה כדי לצפות בשימוש אמיתי בזמן פיתוח, אבל הוא מעביר את תוכן
+# ההודעות של משתמשים אחרים — כולל מיקומים ותמונות של הגוף — לצ'אט פרטי.
+# זה לא משהו שצריך לרוץ כברירת מחדל כשאנשים אמיתיים משתמשים בבוט, ולכן
+# הוא דורש הפעלה מפורשת ולא רק ADMIN_CHAT_ID מוגדר.
+#
+# להפעלה זמנית (למשל דיבוג של תקלה אצל משתמש, בידיעתו):
+#     MIRROR_MESSAGES_TO_ADMIN=1
+#
+# שים לב: זה *לא* משתיק את ההתראות התפעוליות לאדמין (צריכת טוקנים,
+# כשל בשליחת גרף) — הן לא מכילות תוכן של משתמשים ותלויות ב-ADMIN_CHAT_ID
+# בלבד. כדי לכבות גם אותן, הסר את ADMIN_CHAT_ID.
+MIRROR_MESSAGES_TO_ADMIN = os.environ.get("MIRROR_MESSAGES_TO_ADMIN", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+
 DASHBOARD_BASE_URL = os.environ.get("DASHBOARD_BASE_URL", "http://localhost:8080")
 # ה-Mini App לתיעוד session אופליין (docs/session/index.html). ברירת
 # מחדל localhost כדי לא לשבור בדיקות מקומיות, בדיוק כמו DASHBOARD_BASE_URL.
@@ -264,8 +283,12 @@ def answer_callback_query(callback_query_id: str, text: str | None = None) -> No
 # בלי לגעת בעשרות מקומות הקריאה בקוד). לא קשור ל-_notify_admin_token_usage/
 # _notify_admin_chart_skip הקיימים (טלמטריה ממוקדת) — זה מראה-כללי, כל
 # ה-conversation, בשני הכיוונים. שלושתן חולקות את אותו דפוס: best-effort,
-# ADMIN_CHAT_ID אופציונלי (ראו למעלה), כשל בשליחת המראה עצמה לא זורק
-# ולא משפיע על מה שכבר קרה עם המשתמש האמיתי.
+# כשל בשליחת המראה עצמה לא זורק ולא משפיע על מה שכבר קרה עם המשתמש האמיתי.
+#
+# **כבוי כברירת מחדל.** שלושתן עוברות דרך _mirroring_enabled, שדורש גם
+# ADMIN_CHAT_ID וגם MIRROR_MESSAGES_TO_ADMIN=1 (ראו ההסבר ליד ההגדרה
+# למעלה). ADMIN_CHAT_ID לבדו כבר לא מספיק — הוא נשאר בשימוש להתראות
+# התפעוליות, שלא מכילות תוכן של משתמשים.
 #
 # ה-guard str(chat_id) == str(ADMIN_CHAT_ID) חשוב בשני הכיוונים: (א)
 # כשהאדמין עצמו הוא זה שמדבר עם הבוט (למשל בדיקות) — לא רוצים למראות
@@ -273,11 +296,86 @@ def answer_callback_query(callback_query_id: str, text: str | None = None) -> No
 # בתוך _mirror_outgoing_to_admin עצמה קוראת שוב ל-_mirror_outgoing_to_admin,
 # אבל הפעם עם chat_id==ADMIN_CHAT_ID, אז היא עוצרת שם.
 # ---------------------------------------------------------------------
+# ---------------------------------------------------------------------
+# "כמה זמן אפשר להיות בשמש" — הצגת safe_exposure_minutes למשתמש
+# ---------------------------------------------------------------------
+# נוסף 2026-09-15 בעקבות בדיקת הצוות. הנוסחה תמיד חישבה את המספר הזה
+# ומיד זרקה אותו; המשתמש קיבל רק אחוז. ראו safe_exposure_minutes
+# ב-geo_uv_core.py לרקע המלא.
+#
+# **הסף של השעתיים הוא החלטה בטיחותית, לא עיגול.** לפי הנוסחה הנוכחית
+# (effective_spf = 1 + (spf-1)*0.4), סוג עור 3 ב-UV 6.3 עם SPF 30 מקבל
+# 6.7 שעות, וסוג עור 6 עם SPF 50 מקבל 34 שעות. להציג מספרים כאלה זה
+# להבטיח למשתמש שהוא מוגן כל היום. ההנחיה המקובלת היא למרוח מחדש כל
+# שעתיים ללא קשר ל-SPF, אז כל ערך מעל זה נחתך — ותמיד עם המשפט על
+# המריחה החוזרת לצדו.
+SUNSCREEN_REAPPLY_MINUTES = 120
+
+
+def format_duration_he(minutes: float) -> str:
+    """דקות -> טקסט עברי טבעי. 32 -> "כ-32 דקות", 105 -> "כשעה ו-45 דקות"."""
+    total = round(minutes)
+    if total < 60:
+        return f"כ-{total} דקות"
+
+    hours, mins = divmod(total, 60)
+    if hours == 1:
+        head = "כשעה"
+    elif hours == 2:
+        head = "כשעתיים"
+    else:
+        head = f"כ-{hours} שעות"
+
+    # פחות מ-5 דקות עודפות זה רעש בהערכה כזו, לא דיוק.
+    return head if mins < 5 else f"{head} ו-{mins} דקות"
+
+
+def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
+    """
+    השורה שמסבירה למשתמש כמה זמן הוא יכול להיות בשמש עכשיו.
+
+    מחזירה None כשאין מה לומר (UV אפס, או שאין סוג עור) — אז נקודת
+    הקריאה פשוט מדלגת עליה במקום להציג שורה ריקה.
+    """
+    if not skin_type:
+        return None
+    bare = safe_exposure_minutes(uv_index, skin_type)
+    if bare is None:
+        return None
+
+    with_spf = safe_exposure_minutes(uv_index, skin_type, 30)
+    if with_spf and with_spf > SUNSCREEN_REAPPLY_MINUTES:
+        # לא נוקבים במספר שגדול מזמן המריחה החוזרת — ראו ההערה למעלה.
+        spf_part = "קרם הגנה מאריך את הזמן הזה"
+    else:
+        spf_part = f"קרם הגנה מאריך את הזמן הזה ל{format_duration_he(with_spf)}"
+
+    return (
+        f"לפי סוג העור שלכם, {format_duration_he(bare)} בשמש ישירה "
+        "עד סיכון לכוויה, בלי הגנה.\n"
+        f"{spf_part} — אבל חשוב למרוח כמות מספקת, ולחדש כל שעתיים."
+    )
+
+
+def _mirroring_enabled(chat_id: int) -> bool:
+    """
+    האם למראות את השיחה הזו לאדמין.
+
+    קורא את MIRROR_MESSAGES_TO_ADMIN דרך המודול (ולא כקבוע שנלכד ביבוא)
+    כדי שאפשר יהיה להדליק/לכבות אותו בבדיקות בלי לטעון את המודול מחדש.
+    """
+    if not ADMIN_CHAT_ID or not MIRROR_MESSAGES_TO_ADMIN:
+        return False
+    # האדמין מדבר עם הבוט בעצמו — אין טעם למראות לו את עצמו, וזה גם מה
+    # שעוצר את הרקורסיה (ראו ההסבר למעלה).
+    return str(chat_id) != str(ADMIN_CHAT_ID)
+
+
 def _mirror_incoming_to_admin(
     chat_id: int, username: str | None, text: str, photo_sizes: list | None, location: dict | None
 ) -> None:
     """רץ *לפני* הגייטקיפר בכוונה — האדמין רואה גם מה מסונן כ-NOISE, לא רק מה שבאמת מטופל."""
-    if not ADMIN_CHAT_ID or str(chat_id) == str(ADMIN_CHAT_ID):
+    if not _mirroring_enabled(chat_id):
         return
     if text:
         content = text
@@ -294,7 +392,7 @@ def _mirror_incoming_to_admin(
 
 
 def _mirror_outgoing_to_admin(chat_id: int, text: str) -> None:
-    if not ADMIN_CHAT_ID or str(chat_id) == str(ADMIN_CHAT_ID):
+    if not _mirroring_enabled(chat_id):
         return
     try:
         send_message(ADMIN_CHAT_ID, f"📤 [{chat_id}] {text}")
@@ -303,7 +401,7 @@ def _mirror_outgoing_to_admin(chat_id: int, text: str) -> None:
 
 
 def _mirror_outgoing_photo_to_admin(chat_id: int, photo_bytes: bytes, caption: str | None) -> None:
-    if not ADMIN_CHAT_ID or str(chat_id) == str(ADMIN_CHAT_ID):
+    if not _mirroring_enabled(chat_id):
         return
     try:
         send_photo(ADMIN_CHAT_ID, photo_bytes, caption=f"📤 [{chat_id}] {caption or ''}".strip())
@@ -1423,12 +1521,25 @@ def _begin_session(
     # נכונה (למשל "סן חוזה" -> ארה"ב במקום קוסטה ריקה) המשתמש יבחין מיד
     # ולא רק כשה-UV/מזג האוויר לא הגיוני.
     location_label = f"{city_name}, {country}" if country else city_name
+
+    # שורת "כמה זמן מותר לי" — שליפה אחת של סוג העור. best-effort
+    # בכוונה: ה-session כבר נכתב, וכשל כאן לא אמור למנוע את האישור.
+    exposure_line = None
+    try:
+        users = select_rows("users", {"telegram_username": f"eq.{username}"})
+        if users:
+            exposure_line = safe_exposure_line(uv_index, users[0].get("skin_type"))
+    except Exception:
+        logger.exception("Could not build the safe-exposure line for @%s", username)
+
     send_message(
         chat_id,
-        f"התחלת session ב{location_label} (UV נוכחי: {uv_index:.1f}).\n\n"
-        "כשתסיימו, שלחו\n"
+        f"התחלת session ב{location_label} ☀️\n"
+        f"UV נוכחי: {uv_index:.1f}\n\n"
+        + (f"{exposure_line}\n\n" if exposure_line else "")
+        + "כשתסיימו, שלחו\n"
         "/end_session\n\n"
-        "— או עם קרם הגנה (מספר ה-SPF):\n"
+        "אם השתמשתם בקרם הגנה, הוסיפו את מספר ה-SPF:\n"
         "/end_session 50",
         reply_markup={"remove_keyboard": True} if clear_keyboard else None,
     )
@@ -1554,6 +1665,7 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
     # נופל בחזרה בבטחה לדגימה המקורית — אף פעם לא מונע מ-/end_session
     # לסיים בהצלחה.
     uv_index = session["uv_index"]
+    uv_is_average = False
     lat, lon = session.get("lat"), session.get("lon")
     if lat is not None and lon is not None:
         try:
@@ -1561,6 +1673,7 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
                 refreshed_uv = fetch_historical_uv(client, lat, lon, start_time, end_time)
             if refreshed_uv is not None:
                 uv_index = refreshed_uv
+                uv_is_average = True
         except Exception:
             logger.exception(
                 "handle_end_session: failed to refresh weighted-average UV for session id=%s — "
@@ -1576,11 +1689,29 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
         {"end_time": end_time.isoformat(), "spf": spf, "exposure_score": score, "uv_index": uv_index},
     )
 
+    # "55%" לבדו הוא אחוז מתקציב שהמשתמש לא ראה מעולם. מציגים לצדו את
+    # התקציב עצמו, כך שהמספר מקבל משמעות: 45 מתוך 32 דקות מסביר את
+    # ה-140% הרבה יותר טוב מהאחוז לבדו (2026-09-15).
+    #
+    # ומציגים גם את ה-UV עצמו, כי אחרת שתי ההודעות סותרות זו את זו
+    # לכאורה: ב-/start_session הוצג UV רגעי (למשל 2.3 -> 65 דקות), וכאן
+    # מוצג הממוצע המשוקלל על פני ה-session (1.5 -> 100 דקות). שני
+    # המספרים נכונים ומודדים דברים שונים — נצפה בבדיקה אמיתית בלפקדה,
+    # 2026-09-15, ובלי ה-UV לצדם זה נראה כמו באג.
+    budget = safe_exposure_minutes(uv_index, skin_type, spf)
+    uv_label = "UV ממוצע" if uv_is_average else "UV"
+    budget_part = (
+        f"\nמדד חשיפה: {score}% — {round(duration_minutes)} מתוך "
+        f"{round(budget)} הדקות המותרות לכם ב-{uv_label} {uv_index:.1f}."
+        if budget
+        else f"\nמדד חשיפה: {score}%."
+    )
+
     send_message(
         chat_id,
-        f"session הסתיים — {round(duration_minutes)} דקות ב{session['city']}. "
-        f"מדד חשיפה: {score}%.\n\n"
-        "לראות את הנתונים באזור האישי — לחצו\n"
+        f"{round(duration_minutes)} דקות ב{session['city']}."
+        f"{budget_part}\n\n"
+        "כדי לראות את הנתונים באזור האישי — לחצו\n"
         "/dashboard",
     )
     logger.info("Ended session id=%s for @%s: score=%s", session["id"], username, score)
@@ -1734,9 +1865,11 @@ def fetch_utc_offset_seconds(client: httpx.Client, lat: float, lon: float) -> in
 def fetch_sunset_utc(client: httpx.Client, lat: float, lon: float) -> datetime | None:
     """
     נוספה 2026-09-12 — מחזירה את רגע השקיעה המקומית של *היום* ב-lat/lon
-    נתון, כ-datetime מודע-UTC. משמשת את auto_close_expired_sessions_forever
-    למטה כדי לדעת אם session פתוח כבר "עבר את השקיעה" ואמור להיסגר לבד
-    ("אין להזין נתונים לאחר שקיעת החמה").
+    נתון, כ-datetime מודע-UTC.
+
+    שימשה את הסגירה האוטומטית בשקיעה, שעברה ב-2026-09-16 ל-Cloudflare
+    Worker (cloudflare/sunset-worker — שם ההמרה נמצאת ב-sunsetToUtc).
+    נשארה כאן כי היא עומדת בזכות עצמה, ובפרט לבדיקות ידניות.
 
     Open-Meteo עם daily=sunset&timezone=auto מחזיר משהו כמו
     "2026-09-12T18:47" — שעון *מקומי* (ה-timezone שזוהה אוטומטית לפי
@@ -2226,21 +2359,81 @@ def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> s
     להיות להן תשובה אמיתית ולא הפניה גנרית לתפריט.
     """
     answer_language = "בעברית" if lang == "he" else "באנגלית"
+
+    # התאריך חייב להיכנס ל-prompt במפורש (2026-09-15). בלי זה המודל
+    # מחשב "אתמול" מתוך תחושת ה"עכשיו" שנצרבה באימון שלו — באג אמיתי
+    # שנתפס בפרודקשן: על השאלה "מה היה ה-UV במצפה רמון אתמול?" הוא קרא
+    # ל-get_historical_uv עם 2025-05-18 והחזיר UV אמיתי לתאריך שגוי
+    # בשנה וארבעה חודשים. הכלי עשה בדיוק מה שהתבקש; ההקשר הוא שחסר.
+    #
+    # הגרסה הראשונה של התיקון נקבה רק ב"אתמול", וזה לא הספיק: "שלשום",
+    # "לפני שבוע" ו"בשבת" נשארו תלויים בחישוב של המודל. במקום להוסיף
+    # מילה-מילה, מוסרים לו **לוח עוגנים** — שבעת הימים האחרונים עם שם
+    # היום והתאריך, ועוד שני עוגנים רחוקים. כך המודל לא מחשב אף פעם,
+    # הוא רק בוחר שורה; וזה מכסה גם ניסוחים שלא חשבנו עליהם מראש.
+    now_utc = datetime.now(timezone.utc)
+    today = now_utc.date()
+    today_iso = today.isoformat()
+
+    hebrew_weekdays = ("שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון")
+    relative_names = {1: "אתמול", 2: "שלשום"}
+
+    anchor_lines = [f"  היום (יום {hebrew_weekdays[today.weekday()]}) = {today_iso} · days_back=0"]
+    for back in range(1, 8):
+        d = today - timedelta(days=back)
+        label = f"יום {hebrew_weekdays[d.weekday()]}"
+        if back in relative_names:
+            label = f"{relative_names[back]}, {label}"
+        elif back == 7:
+            label = f"לפני שבוע, {label}"
+        anchor_lines.append(f"  {label} = {d.isoformat()} · days_back={back}")
+    anchor_lines.append(
+        f"  לפני חודש = {(today - timedelta(days=30)).isoformat()} · days_back=30"
+    )
+    anchor_lines.append(
+        f"  לפני שנה = {(today - timedelta(days=365)).isoformat()} · days_back=365"
+    )
+    anchors = "\n".join(anchor_lines)
+
     return (
+        f"השעה עכשיו ב-UTC: {today_iso} {now_utc:%H:%M}.\n"
+        "לוח התאריכים שלך — השתמש בו ואל תחשב תאריכים בעצמך, "
+        "ואל תסתמך על שום ידיעה אחרת לגבי התאריך הנוכחי:\n"
+        f"{anchors}\n"
+        "לביטוי שלא מופיע בלוח, בחר את העוגן הקרוב ביותר וספור ממנו "
+        "ימים שלמים.\n\n"
         "אתה חלק מבוט טלגרם בשם SunSafe שעוזר למשתמשים לעקוב אחרי חשיפה "
         "לקרינת UV ולהתגונן מהשמש. המשתמש שלח הודעה חופשית (לא פקודה "
         "מוכרת) שכבר סוננה מספאם/רעש ברורים על ידי סינון קודם:\n\n"
         f'"{user_text}"\n\n'
-        "אם זו שאלה על UV/מזג אוויר במקום מסוים (כרגע או תחזית) — ענה "
-        "עליה עם הכלים הזמינים לך (geocode_city תמיד לפני "
-        "get_current_uv/get_uv_forecast; אסור לנחש קואורדינטות מידע "
-        "כללי).\n\n"
-        "אם זו שאלה על היסטוריה/נתונים אישיים של המשתמש עצמו — למשל "
-        "\"כמה זמן הייתי בשמש היום\", \"מה היה אתמול\", \"תראה לי את "
+        "אם זו שאלה על UV/מזג אוויר במקום מסוים — ענה עליה עם הכלים "
+        "הזמינים לך. geocode_city תמיד ראשון, אסור לנחש קואורדינטות "
+        "מידע כללי. אחריו: get_current_uv למצב עכשיו, get_uv_forecast "
+        "לימים הבאים, ו-get_historical_uv לכל תאריך שכבר עבר — כולל "
+        "אתמול, החודש שעבר או לפני שנה. אם get_historical_uv מחזיר "
+        "found=false, אמור זאת כפי שהוא ואל תעריך ערך בעצמך.\n\n"
+        "לשאלה יחסית (\"אתמול\", \"לפני שבוע\", \"לפני שנה\") העבר "
+        "ל-get_historical_uv את days_back — 1, 7, 365 — ולא תאריך "
+        "שחישבת בעצמך. תאריך מוחלט (date_iso) רק כשהמשתמש נקב בתאריך "
+        "מדויק. **תמיד ציין בתשובה את התאריך שהכלי החזיר בשדה date**, "
+        "כדי שהמשתמש יראה על איזה יום ענית.\n\n"
+        "שים לב לגבולות התחום: לעבר יש **UV בלבד**. טמפרטורה, עננות "
+        "ולחות זמינות רק למצב הנוכחי (get_current_uv). אם שאלו על "
+        "\"מזג האוויר\" בתאריך שעבר — תן את ה-UV ואמור בפשטות שטמפרטורה "
+        "היסטורית היא לא משהו שהבוט עוקב אחריו.\n\n"
+        "אם זו שאלה על הנתונים **האישיים** של המשתמש — החשיפה שלו, "
+        "ה-sessions שלו, כמה זמן *הוא* היה בשמש — למשל \"כמה זמן הייתי "
+        "בשמש היום\", \"מה היה מדד החשיפה שלי אתמול\", \"תראה לי את "
         "ה-sessions שלי\" — **אל תנסה לחשב או לנחש תשובה** (אין לך גישה "
-        "לנתונים האלה דרך הכלים שברשותך, רק לכלי מזג-אוויר חיים): "
-        "תפנה אותו ל-/dashboard, האזור האישי, שם יש היסטוריה מלאה, "
-        "ניתוח יומי וחודשי, ואפשרות להוסיף ולערוך sessions.\n\n"
+        "לנתונים של המשתמש דרך הכלים שברשותך): תפנה אותו ל-/dashboard, "
+        "האזור האישי, שם יש היסטוריה מלאה, ניתוח יומי וחודשי, ואפשרות "
+        "להוסיף ולערוך sessions.\n\n"
+        "ההבחנה הזו חשובה: \"מה היה ה-UV במצפה רמון אתמול\" היא שאלה על "
+        "*מקום* ונענית עם get_historical_uv. \"מה היה מדד החשיפה שלי "
+        "אתמול\" היא שאלה על *המשתמש* ונענית בהפניה ל-/dashboard.\n\n"
+        "ובשום מקרה אל תטען שהבוט לא שומר היסטוריה או שאין לו נתוני "
+        "עבר — יש לו את שניהם: כל session של המשתמש נשמר ומוצג "
+        "ב-/dashboard, ו-UV היסטורי נשלף בכלי שלמעלה.\n\n"
         "אם זו שאלה על הבוט עצמו — מה הוא יודע לעשות או איך משתמשים בו "
         "— ענה עליה ישירות ובקצרה: הוא עוקב אחרי חשיפה לשמש "
         "(/start_session כשיוצאים, /end_session כשחוזרים, והוא מחשב מדד "
@@ -2537,106 +2730,17 @@ def poll_forever() -> None:
 
 
 # ---------------------------------------------------------------------
-# סגירה אוטומטית של sessions פתוחים אחרי שקיעה
+# סגירה אוטומטית של sessions אחרי שקיעה — עברה ל-Cloudflare Worker
 # ---------------------------------------------------------------------
-# נוספה 2026-09-12: "אין להזין נתונים לאחר שקיעת החמה. אם יש session
-# שלא נסגר אז שיסתיים ללא צורך המשתמש." בכוונה *לא* חוסמת פתיחת
-# session חדש אחרי שקיעה (/start_session ממשיך לעבוד כרגיל בכל שעה) —
-# הסקופ הוא רק לסגור sessions שכבר *פתוחים* ושעברו את השקיעה שלהם,
-# בלי דרישה מהמשתמש לעשות משהו. הסגירה עצמה עוברת דרך handle_end_session
-# — *אותו נתיב קוד בדיוק* כמו /end_session ידני (בדיוק כמו
-# end_session_for_user.py) — כך שהמשתמש מקבל את אותה הודעת טלגרם
-# אמיתית בדיוק ("session הסתיים — X דקות ב-<עיר>. מדד חשיפה: Y%.").
-SUNSET_CHECK_INTERVAL_SECONDS = 300
-
-
-def _maybe_auto_close_session(client: httpx.Client, session: dict, now: datetime) -> None:
-    """בודקת session פתוח יחיד, וסוגרת אותו אם השקיעה המקומית שלו כבר עברה."""
-    session_id = session.get("id")
-    lat, lon = session.get("lat"), session.get("lon")
-    if lat is None or lon is None:
-        # sessions ישנים מלפני migration ה-lat/lon (ראו weighted_average_uv
-        # למעלה) — אין דרך לדעת מתי שוקעת השמש בלעדיהם, אז לא נוגעים בהם
-        # (עדיין אפשר לסגור אותם ידנית עם /end_session או
-        # end_session_for_user.py).
-        logger.warning(
-            "_maybe_auto_close_session: session id=%s has no stored lat/lon — skipping sunset check",
-            session_id,
-        )
-        return
-
-    sunset_utc = fetch_sunset_utc(client, lat, lon)
-    if sunset_utc is None or now < sunset_utc:
-        return  # עוד לפני השקיעה, או שלא הצלחנו לקבוע אותה הפעם — לא נוגעים
-
-    username = session["telegram_username"]
-
-    # בדיקה חוזרת שה-session עדיין פתוח בפועל: אם המשתמש הספיק לשלוח
-    # /end_session בעצמו בדיוק באותו רגע, לא רוצים לקרוא ל-handle_end_session
-    # על session שכבר נסגר (זה היה שולח לו בטעות "אין לך session פתוח כרגע").
-    still_open = select_rows("exposure_log", {"id": f"eq.{session_id}", "end_time": "is.null"})
-    if not still_open:
-        return
-
-    users = select_rows("users", {"telegram_username": f"eq.{username}"})
-    chat_id = users[0].get("chat_id") if users else None
-    if not chat_id:
-        # לא אמור לקרות בפועל (אי אפשר לפתוח session בלי chat_id ידוע),
-        # אבל best-effort: לא נועלים את כל הסבב בגלל שורה חריגה אחת.
-        logger.warning(
-            "_maybe_auto_close_session: no chat_id for @%s — cannot auto-close session id=%s",
-            username, session_id,
-        )
-        return
-
-    logger.info(
-        "Auto-closing session id=%s for @%s (sunset was %s, now %s)",
-        session_id, username, sunset_utc.isoformat(), now.isoformat(),
-    )
-    handle_end_session(chat_id, username, "")
-
-
-def _auto_close_expired_sessions_once() -> None:
-    """סבב בדיקה בודד על כל ה-sessions הפתוחים — מופרד מהלולאה כדי שאפשר לבדוק אותו ב-unit test."""
-    try:
-        open_sessions = select_rows("exposure_log", {"end_time": "is.null"})
-    except Exception:
-        logger.exception("_auto_close_expired_sessions_once: failed to fetch open sessions")
-        return
-
-    if not open_sessions:
-        return
-
-    now = datetime.now(timezone.utc)
-    with httpx.Client() as client:
-        for session in open_sessions:
-            try:
-                _maybe_auto_close_session(client, session, now)
-            except Exception:
-                logger.exception(
-                    "_auto_close_expired_sessions_once: failed to process session id=%s",
-                    session.get("id"),
-                )
-
-
-def auto_close_expired_sessions_forever(check_interval_seconds: int = SUNSET_CHECK_INTERVAL_SECONDS) -> None:
-    """
-    Loop רקע (thread נפרד — ראו app.py) שבודק כל check_interval_seconds
-    שניות את כל ה-sessions הפתוחים ב-exposure_log, וסוגר אוטומטית כל
-    אחד שהשקיעה המקומית שלו (לפי lat/lon השמורים) כבר עברה.
-
-    best-effort בכל שכבה: כשל בשליפת הרשימה, session בודד בלי lat/lon,
-    כשל ברשת בקביעת השקיעה, או session בודד שנכשל מכל סיבה אחרת — כל
-    אלה רק מדלגים על אותו session/סבב (עם רישום ללוג) ולא מפילים את
-    ה-thread כולו, בדיוק כמו poll_forever למעלה.
-    """
-    logger.info("Sunset auto-close watchdog started (checking every %ss)", check_interval_seconds)
-    while True:
-        try:
-            _auto_close_expired_sessions_once()
-        except Exception:
-            logger.exception("auto_close_expired_sessions_forever: unexpected failure in one check cycle")
-        time.sleep(check_interval_seconds)
+# נבנתה כאן ב-2026-09-12 כ-thread רקע בטיק של 5 דקות, ועברה ב-2026-09-16
+# ל-cloudflare/sunset-worker (Cron Trigger). הסיבה: זו עבודה מתוזמנת,
+# ולהריץ אותה בתוך התהליך שמריץ את לולאת ה-polling היחידה הפיל אותה
+# יחד עם הבוט בכל פריסה מחדש או קריסה.
+#
+# ה-Worker מייצר את **אותה הודעת סיום בדיוק** — יש שם בדיקה שמשווה
+# אותה תו-בתו מול fixture שנוצר מהפייתון הזה (ראו
+# cloudflare/sunset-worker/scripts/gen_fixture.py). אם משנים כאן את
+# הנוסחה או את נוסח ההודעה, יש להריץ אותו מחדש ולבדוק ששניהם מסכימים.
 
 
 if __name__ == "__main__":

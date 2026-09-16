@@ -115,7 +115,9 @@ def fake_handle_skin_damage_photo(chat_id, username, photo_file_id):
     damage_calls.append((chat_id, username, photo_file_id))
 
 
-def fake_handle_skin_type_photo(chat_id, username, photo_file_id):
+def fake_handle_skin_type_photo(chat_id, username, photo_file_id, lang="he"):
+    # lang נוסף ב-2026-09-14 (תמיכה דו-לשונית) — handle_update מעביר את
+    # שפת ההודעה הנכנסת הלאה לנתיב התמונה.
     skin_type_calls.append((chat_id, username, photo_file_id))
 
 

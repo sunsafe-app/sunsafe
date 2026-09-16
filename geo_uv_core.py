@@ -48,16 +48,36 @@ def effective_spf(labeled_spf: int | None) -> float:
     return 1 + (labeled_spf - 1) * 0.4
 
 
+def safe_exposure_minutes(uv_index: float, skin_type: int, spf: int | None = None) -> float | None:
+    """
+    כמה דקות בשמש ישירה עד סיכון לכוויה, עבור סוג עור ו-UV נתונים.
+
+    זה החצי הראשון של calculate_exposure_score, שהופרד ב-2026-09-15 כדי
+    שאפשר יהיה **להציג** אותו למשתמש. עד אז המספר הזה היה מחושב בכל
+    session ונזרק מיד: המשתמש קיבל רק "מדד חשיפה: 55%" — אחוז מתקציב
+    שהוא לא רואה.
+
+    מבדיקת הצוות: משתמש פתח session בירוחם ב-UV 6.3 עם סוג עור 3, ואמר
+    "אני לא רואה שום דבר מעבר ל'תמרח 50', יכולתי להבין את זה לבד". הוא
+    צדק — הבוט ידע באותו רגע שמדובר ב-32 דקות בשבילו, ולא אמר.
+
+    מחזירה None כשאין משמעות למספר (UV אפס — למשל session בלילה), כדי
+    שנקודת הקריאה תדלג על השורה במקום להציג "אינסוף דקות".
+    """
+    if uv_index <= 0:
+        return None
+    factor = SKIN_TYPE_FACTOR.get(skin_type, 1.0)
+    return (200 / uv_index) * factor * effective_spf(spf)
+
+
 def calculate_exposure_score(uv_index: float, duration_minutes: float, skin_type: int, spf: int | None) -> int:
     # UV=0 (למשל session שנפתח בלילה) הוא ערך תקין לגמרי, לא שגיאה — אבל
     # 200/uv_index עם 0 קורס ב-ZeroDivisionError. בלי חשיפה ל-UV בכלל
     # הסיכון הוא אפס, ללא תלות במשך הזמן, אז מחזירים 0 ישירות. באג אמיתי
     # שתפס session תקוע (id=38, UV=0) — ראה השיחה מ-31.8.2026.
-    if uv_index <= 0:
+    safe_minutes = safe_exposure_minutes(uv_index, skin_type, spf)
+    if safe_minutes is None:
         return 0
-    factor = SKIN_TYPE_FACTOR.get(skin_type, 1.0)
-    protection = effective_spf(spf)
-    safe_minutes = (200 / uv_index) * factor * protection
     return round((duration_minutes / safe_minutes) * 100)
 
 

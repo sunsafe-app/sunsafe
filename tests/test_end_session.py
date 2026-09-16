@@ -170,7 +170,22 @@ with patch.object(bc, "send_message", fake_send_message), \
         crash_detail = str(e)
     check("handle_end_session: refresh raises -> does not crash /end_session", crashed is False, "" if not crashed else crash_detail)
     if not crashed:
-        check("handle_end_session: refresh raises -> still sends a completion message", len(sent_messages) == 1 and "הסתיים" in sent_messages[0], f"-> {sent_messages}")
+        # לא בודקים מילה ספציפית בנוסח (הוא נערך ביד ב-2026-09-14) אלא את
+        # מה שההודעה חייבת לשאת: העיר ומדד החשיפה.
+        msg = sent_messages[0] if sent_messages else ""
+        check(
+            "handle_end_session: refresh raises -> still sends a completion message",
+            len(sent_messages) == 1 and "מצפה רמון" in msg and "מדד חשיפה" in msg,
+            f"-> {sent_messages}",
+        )
+        # הרענון נכשל, אז ה-UV שמוצג הוא הדגימה המקורית ולא ממוצע —
+        # ההודעה חייבת לומר "UV" ולא "UV ממוצע", אחרת היא משקרת על
+        # מקור המספר (2026-09-15).
+        check(
+            "handle_end_session: refresh failed -> the UV is not labelled as an average",
+            "UV ממוצע" not in msg and "UV 3.3" in msg,
+            f"-> {msg}",
+        )
         if updated:
             _, _, patch_dict = updated[0]
             check("handle_end_session: refresh raises -> falls back to original snapshot (3.3)", patch_dict.get("uv_index") == 3.3, f"-> {patch_dict}")

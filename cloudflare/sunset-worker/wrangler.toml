@@ -1,0 +1,30 @@
+name = "sunsafe-sunset"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+
+# ל-Worker הזה אין fetch handler — רק scheduled. בלי שתי השורות האלה
+# Cloudflare מפעיל workers.dev כברירת מחדל ונותן לו כתובת ציבורית
+# (sunsafe-sunset.<account>.workers.dev) שלא עושה כלום מלבד להחזיר
+# שגיאה — נקודת קצה ציבורית מיותרת על Worker שמחזיק את
+# SUPABASE_SERVICE_ROLE_KEY. cron trigger עובד מצוין בלי שום route.
+workers_dev = false
+preview_urls = false
+
+# כל 5 דקות — אותו טיק שהיה ל-SUNSET_CHECK_INTERVAL_SECONDS = 300
+# ב-bot_commands.py. חשבון Cloudflare מוגבל ל-5 Cron Triggers, וזה
+# הראשון שאנחנו צורכים.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# הסודות *לא* יושבים כאן. wrangler.toml נכנס לגיט.
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+#   wrangler secret put BOT_TOKEN
+#
+# שימו לב ש-SUPABASE_SERVICE_ROLE_KEY עוקף RLS לגמרי. ה-Worker הזה
+# צריך אותו כי הוא פועל בשם המערכת ולא בשם משתמש (אין לו טוקן
+# מג'יק-לינק כמו ל-Edge Functions של הדשבורד), אבל זו הסיבה שהוא
+# עושה בדיוק שני דברים: PATCH ל-exposure_log ו-SELECT מ-users.
+
+[observability]
+enabled = true

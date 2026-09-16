@@ -1,0 +1,14 @@
+{
+  "name": "sunsafe-sunset",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/logic.test.ts src/index.test.ts",
+    "dev": "wrangler dev --test-scheduled",
+    "deploy": "wrangler deploy",
+    "fixture": "python scripts/gen_fixture.py"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

@@ -5,3 +5,15 @@ __pycache__/
 
 venv/
 .superpowers/
+
+# Node / Cloudflare Workers — wrangler מתקין 169MB ו-1656 קבצים לכל
+# Worker. package.json + package-lock.json מספיקים כדי לשחזר אותם
+# ב-npm install, והם כן נכנסים לגיט.
+node_modules/
+dist/
+
+# מצב מקומי של wrangler (מטמון, קונפיג של dev). לא קוד.
+.wrangler/
+
+# הקבצים ש-Claude Desktop כותב לתיקייה הזו (פלטים, טיוטות, עותקים).
+Claude outputs/

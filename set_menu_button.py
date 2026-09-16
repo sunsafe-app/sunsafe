@@ -1,19 +1,33 @@
 """
-SunSafe — הגדרת Menu Button קבוע לבוט (חד-פעמי)
---------------------------------------------------
-קורא ל-setChatMenuButton של Telegram Bot API כדי שכפתור פתיחת ה-Mini App
-האופליין (docs/session/index.html) יופיע תמיד בפינת הצ'אט של הבוט —
-ליד תיבת ההקלדה — גם בלי לגלול היסטוריה ובלי לזכור לשלוח /offline_session
-מראש. זו הגדרה ברמת הבוט (לא per-message), אז מריצים את זה פעם אחת
-ולא כחלק מ-bot_commands.py הרץ-תמיד.
+SunSafe — הגדרת Menu Button של הבוט (setChatMenuButton)
+--------------------------------------------------------
+הכפתור בפינת הצ'אט, ליד תיבת ההקלדה, יכול להיות אחד משניים — לא שניהם:
+
+  commands  (ברירת המחדל) — כפתור "/" שפותח את רשימת הפקודות הרשומות
+            ב-setMyCommands. זה מה שאנחנו רוצים כברירת מחדל: ארבע
+            הפקודות של set_bot_profile.py.
+  web_app   — כפתור שפותח את ה-Mini App האופליין (docs/session/index.html).
+            **הוא מחליף את תפריט הפקודות לגמרי.** המשתמש כבר לא רואה
+            את "/" בפינה.
+
+זו הגדרה ברמת הבוט (לא per-message), ו-setChatMenuButton הוא "set" ולא
+"add" — כל הרצה דורסת את הקודמת.
+
+2026-09-14: הסקריפט הזה הורץ בטעות על הבוט החדש (@SunSafeAppBot) במסגרת
+ההעברה מ-@gil612Bot, והחליף את תפריט ארבע הפקודות בכפתור האופליין. מכאן
+ההתנהגות הפוכה: **בלי ארגומנטים הוא מחזיר את תפריט הפקודות**, ומי שבאמת
+רוצה את כפתור ה-Mini App צריך לבקש אותו במפורש.
+
+הרצה:
+    python set_menu_button.py            # תפריט הפקודות (ברירת מחדל)
+    python set_menu_button.py --web-app  # כפתור ה-Mini App האופליין
+    python set_menu_button.py --show     # רק מראה מה מוגדר כרגע, בלי לשנות
 
 ראה docs/2026-08-29-offline-session-miniapp-design.md סעיף 10.
-
-הרצה (חד-פעמי, אחרי שה-Mini App כבר פרוס ב-GitHub Pages):
-    python set_menu_button.py
 """
 
 import os
+import sys
 
 import httpx
 from dotenv import load_dotenv
@@ -25,32 +39,77 @@ SESSION_MINIAPP_URL = os.environ.get("SESSION_MINIAPP_URL", "http://localhost:80
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
-def main() -> None:
-    if SESSION_MINIAPP_URL.startswith("http://localhost"):
+def _call(method: str, payload: dict | None = None) -> dict:
+    response = httpx.post(f"{TELEGRAM_API}/{method}", json=payload or {}, timeout=10.0)
+    response.raise_for_status()
+    result = response.json()
+    if not result.get("ok"):
+        raise RuntimeError(f"{method} נכשל: {result}")
+    return result
+
+
+def show() -> None:
+    """מדפיס את ההגדרה הנוכחית — שימושי כדי לוודא שהחזרה באמת תפסה."""
+    button = _call("getChatMenuButton")["result"]
+    kind = button.get("type")
+    if kind == "web_app":
+        url = (button.get("web_app") or {}).get("url")
+        print(f"כרגע מוגדר: כפתור Mini App -> {url}")
+        print("תפריט הפקודות (\"/\") *לא* מוצג למשתמש.")
+    elif kind == "commands":
+        print("כרגע מוגדר: תפריט הפקודות (\"/\"). זו ברירת המחדל הרצויה.")
+    else:
+        print(f"כרגע מוגדר: {kind} — טלגרם מציג את תפריט הפקודות כברירת מחדל.")
+
+
+def set_commands() -> None:
+    _call("setChatMenuButton", {"menu_button": {"type": "commands"}})
+    print("הוחזר: כפתור התפריט מציג שוב את רשימת הפקודות.")
+    print("אם ארבע הפקודות לא מופיעות, הריצו קודם: python set_bot_profile.py")
+
+
+def set_web_app() -> None:
+    if not SESSION_MINIAPP_URL.startswith("https://"):
         print(
-            "אזהרה: SESSION_MINIAPP_URL עדיין מצביע ל-localhost. הגדירו אותו "
-            "לכתובת ה-GitHub Pages האמיתית (משתנה סביבה) לפני שמריצים את זה, "
-            "אחרת הכפתור בטלגרם יפתח קישור שלא עובד למשתמשים אחרים."
+            f"SESSION_MINIAPP_URL אינו HTTPS ({SESSION_MINIAPP_URL!r}). טלגרם ידחה "
+            "כתובת כזו, והכפתור בטלגרם ייפתח לשום מקום. הגדירו אותו ב-.env "
+            "לכתובת ה-GitHub Pages האמיתית ונסו שוב."
         )
         return
 
-    response = httpx.post(
-        f"{TELEGRAM_API}/setChatMenuButton",
-        json={
-            "menu_button": {
-                "type": "web_app",
-                "text": "SunSafe אופליין",
-                "web_app": {"url": SESSION_MINIAPP_URL},
-            }
-        },
-        timeout=10.0,
+    print(
+        "שימו לב: זה מחליף את תפריט הפקודות (\"/\") בכפתור ה-Mini App. "
+        "המשתמש לא יראה יותר את רשימת הפקודות בפינת הצ'אט."
     )
-    response.raise_for_status()
-    result = response.json()
-    if result.get("ok"):
-        print(f"הוגדר בהצלחה. Menu Button יפתח: {SESSION_MINIAPP_URL}")
+    _call("setChatMenuButton", {
+        "menu_button": {
+            "type": "web_app",
+            "text": "SunSafe אופליין",
+            "web_app": {"url": SESSION_MINIAPP_URL},
+        }
+    })
+    print(f"הוגדר. Menu Button יפתח: {SESSION_MINIAPP_URL}")
+
+
+def main() -> None:
+    args = set(sys.argv[1:])
+    unknown = args - {"--web-app", "--show"}
+    if unknown:
+        print(f"ארגומנט לא מוכר: {' '.join(sorted(unknown))}")
+        print(__doc__)
+        raise SystemExit(2)
+
+    if "--show" in args:
+        show()
+        return
+
+    if "--web-app" in args:
+        set_web_app()
     else:
-        print(f"נכשל: {result}")
+        set_commands()
+
+    print()
+    show()
 
 
 if __name__ == "__main__":
