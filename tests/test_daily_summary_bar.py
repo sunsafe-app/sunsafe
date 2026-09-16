@@ -89,12 +89,17 @@ text = daily_summary_he(82, 3, 71.4, "חיפה", 47)
 check("המספר מופיע כטקסט", "82%" in text)
 check("שם הרמה מופיע במילים", "בטווח הגבוה" in text)
 check("וגם כמה נשאר עד חשיפה מלאה", "עוד 18%" in text)
-check("מספר ה-sessions והדקות", "3 sessions" in text and "71 דקות" in text, f"-> {text!r}")
-check("וה-session הגבוה", "חיפה, 47%" in text)
+check("הדקות בשמש מופיעות", "71 דקות בשמש" in text, f"-> {text!r}")
+# **הבדיקה שנועלת את מה שהוסר.** בבדיקה אמיתית יצא "16 sessions · 23
+# דקות בשמש" — 1.4 דקות לכל session. המספר מודד כמה פעמים נלחץ
+# /start_session, לא כמה שמש נספגה, והוא הוריד את העין מהדקות.
+check("ומספר ה-sessions *לא* מופיע", "sessions" not in text and "session ·" not in text,
+      f"-> {text!r}")
+check("וה-session הגבוה", "הגבוה ביותר: חיפה, 47%" in text)
 
 one = daily_summary_he(12, 1, 18)
-check("session בודד -> 'session' ביחיד", "1 session ·" in one, f"-> {one!r}")
-check("ובלי שורת 'הגבוה מביניהם' כשיש רק אחד", "הגבוה מביניהם" not in one)
+check("session בודד -> רק דקות, בלי מספר", "היום: 18 דקות בשמש" in one, f"-> {one!r}")
+check("ובלי שורת 'הגבוה ביותר' כשיש רק אחד", "הגבוה ביותר" not in one)
 
 over = daily_summary_he(145, 2, 210, "אילת", 90)
 check("מעל 100% -> נוסח של חשיפה מלאה", "חשיפה מלאה" in over)
@@ -155,6 +160,7 @@ def _end_session_text(day_rows):
 text = _end_session_text([_closed(1, 40, 25, "אילת"), _closed(2, 35, 20, "ירושלים")])
 check("הודעת הסיום כוללת סרגל צבעים", any(c in text for c in "🟩🟨🟧🟥"), f"-> {text!r}")
 check("והצבירה היא סכום: 40+35+30 = 105", "105%" in text, f"-> {text!r}")
+check("ובלי מספר sessions", "sessions" not in text)
 check("כלומר עברה את 100 -> כולה אדומה", "🟥" * 10 in text)
 check("והנוסח הוא של חשיפה מלאה", "חשיפה מלאה" in text)
 check("עדיין מופיעה התוצאה של ה-session עצמו", "דקות בחיפה" in text)
@@ -162,7 +168,7 @@ check("וגם ההפניה לדשבורד", "/dashboard" in text)
 
 text = _end_session_text([])
 check("יום עם session בודד -> סרגל לפי אותו ציון", "30%" in text, f"-> {text!r}")
-check("ובלי שורת 'הגבוה מביניהם'", "הגבוה מביניהם" not in text)
+check("ובלי שורת 'הגבוה ביותר'", "הגבוה ביותר" not in text)
 
 print()
 if FAILURES:

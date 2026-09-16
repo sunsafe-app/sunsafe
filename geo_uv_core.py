@@ -187,16 +187,22 @@ def daily_summary_he(
     if day_score < 100:
         headline += f" עוד {100 - day_score}% עד חשיפה מלאה."
 
+    # session_count מגיע כפרמטר אבל **לא מוצג** (16.9.2026). הוא הוצג
+    # בגרסה הראשונה, ובבדיקה אמיתית יצא "16 sessions · 23 דקות בשמש"
+    # — כלומר 1.4 דקות לכל אחד. המספר מודד כמה פעמים נלחץ /start_session,
+    # לא כמה שמש נספגה, והוא רק מוריד את העין מהמספר שכן חשוב. הוא
+    # נשאר בחתימה כי הוא קובע אם יש בכלל "הגבוה ביותר" להציג.
     minutes = round(total_minutes)
-    plural = "sessions" if session_count != 1 else "session"
     lines = [
         f"{exposure_bar(day_score)}  {day_score}%",
         headline,
         "",
-        f"היום: {session_count} {plural} · {minutes} דקות בשמש",
+        f"היום: {minutes} דקות בשמש",
     ]
     if peak_city and peak_score is not None and session_count > 1:
-        lines.append(f"הגבוה מביניהם: {peak_city}, {peak_score}%")
+        # אותו נוסח כמו ב-/today ("מדד החשיפה הגבוה ביותר"), ולא
+        # "הגבוה מביניהם" — בלי מספר ה-sessions אין למה להתייחס.
+        lines.append(f"הגבוה ביותר: {peak_city}, {peak_score}%")
     return "\n".join(lines)
 
 

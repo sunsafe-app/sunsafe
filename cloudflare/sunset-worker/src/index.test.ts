@@ -241,8 +241,11 @@ test("the message carries the cumulative daily bar, not just this session", asyn
   assert.match(text, /105%/, "the day should be 40+35+30, not the max");
   assert.match(text, /חשיפה מלאה/, "over 100% reads as full exposure");
   assert.ok(text.includes("🟥".repeat(10)), "over 100% the bar is all red");
-  assert.match(text, /3 sessions/);
-  assert.match(text, /הגבוה מביניהם: אילת, 40%/);
+  assert.match(text, /הגבוה ביותר: אילת, 40%/);
+  // מספר ה-sessions הוסר במכוון: בבדיקה אמיתית יצא "16 sessions ·
+  // 23 דקות בשמש", כלומר 1.4 דקות לכל אחד. הוא מודד לחיצות על
+  // /start_session, לא חשיפה לשמש.
+  assert.ok(!text.includes("sessions"), "the session count should not be shown");
   // והתוצאה של ה-session עצמו עדיין שם
   assert.match(text, /דקות בירוחם/);
 });

@@ -152,16 +152,17 @@ export function dailySummaryHe(
   let headline: string = DAILY_HEADLINES[scoreToLevel(dayScore)];
   if (dayScore < 100) headline += ` עוד ${100 - dayScore}% עד חשיפה מלאה.`;
 
+  // sessionCount מגיע אבל לא מוצג — ראו ההערה ב-daily_summary_he
+  // בפייתון. הוא קובע רק אם יש "הגבוה ביותר" להציג.
   const minutes = pythonRound(totalMinutes);
-  const plural = sessionCount !== 1 ? "sessions" : "session";
   const lines = [
     `${exposureBar(dayScore)}  ${dayScore}%`,
     headline,
     "",
-    `היום: ${sessionCount} ${plural} · ${minutes} דקות בשמש`,
+    `היום: ${minutes} דקות בשמש`,
   ];
   if (peakCity && peakScore !== null && peakScore !== undefined && sessionCount > 1) {
-    lines.push(`הגבוה מביניהם: ${peakCity}, ${peakScore}%`);
+    lines.push(`הגבוה ביותר: ${peakCity}, ${peakScore}%`);
   }
   return lines.join("\n");
 }
