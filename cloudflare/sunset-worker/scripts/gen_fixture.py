@@ -72,14 +72,9 @@ for city, duration, uv, skin, spf, is_avg, daily in (
     ("אילת", 20, 0, 4, None, True, (33, 2, 40, "אילת", 20)),
 ):
     score = calculate_exposure_score(uv, duration, skin, spf)
-    budget = safe_exposure_minutes(uv, skin, spf)
-    uv_label = "UV ממוצע" if is_avg else "UV"
-    budget_part = (
-        f"\nמדד חשיפה: {score}% — {round(duration)} מתוך "
-        f"{round(budget)} הדקות המותרות לכם ב-{uv_label} {uv:.1f}."
-        if budget else f"\nמדד חשיפה: {score}%."
-    )
-    daily_part = "\n\n" + daily_summary_he(*daily) if daily else ""
+    # שורת התקציב הוסרה מההודעה ב-16.9.2026 — score עוד נכתב ל-DB
+    # ונשאר ב-fixture, אבל אינו מוצג.
+    daily_part = "\n" + daily_summary_he(*daily) if daily else ""
     MESSAGES.append({
         "city": city, "durationMinutes": duration, "uvIndex": uv,
         "skinType": skin, "spf": spf, "uvIsAverage": is_avg,
@@ -87,7 +82,7 @@ for city, duration, uv, skin, spf, is_avg, daily in (
             "score": daily[0], "sessionCount": daily[1], "totalMinutes": daily[2],
             "peakCity": daily[3], "peakScore": daily[4],
         },
-        "text": f"{round(duration)} דקות ב{city}.{budget_part}{daily_part}\n\n"
+        "text": f"{round(duration)} דקות ב{city}.{daily_part}\n"
                 "כדי לראות את הנתונים באזור האישי — לחצו\n/dashboard",
     })
 

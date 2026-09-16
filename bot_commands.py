@@ -1708,14 +1708,14 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
     # מוצג הממוצע המשוקלל על פני ה-session (1.5 -> 100 דקות). שני
     # המספרים נכונים ומודדים דברים שונים — נצפה בבדיקה אמיתית בלפקדה,
     # 2026-09-15, ובלי ה-UV לצדם זה נראה כמו באג.
-    budget = safe_exposure_minutes(uv_index, skin_type, spf)
-    uv_label = "UV ממוצע" if uv_is_average else "UV"
-    budget_part = (
-        f"\nמדד חשיפה: {score}% — {round(duration_minutes)} מתוך "
-        f"{round(budget)} הדקות המותרות לכם ב-{uv_label} {uv_index:.1f}."
-        if budget
-        else f"\nמדד חשיפה: {score}%."
-    )
+    # שורת "מדד חשיפה: X% — Y מתוך Z הדקות המותרות" הוסרה ב-16.9.2026
+    # לבקשת המשתמש. היא נוספה ב-15.9 כדי לתת לאחוז משמעות, אבל מאז
+    # נוסף הסרגל היומי — וההודעה הגיעה לתשע שורות על session של אפס
+    # דקות. התקציב עצמו עדיין מוצג ב-/start_session, שם הוא מגיע בזמן
+    # שעוד אפשר לפעול לפיו, והפירוט לכל session נמצא ב-/dashboard.
+    #
+    # score עצמו ממשיך להיחשב ולהיכתב ל-exposure_log למעלה — רק
+    # התצוגה שלו בהודעה הוסרה.
 
     # הסיכום היומי בהודעת הסיום (16.9.2026). /today כבר עשה בדיוק את
     # החישוב הזה — sum על ה-sessions הסגורים של אותו תאריך UTC — אבל
@@ -1743,7 +1743,7 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
                 for s in closed_today
             )
             peak = _peak_exposure_session(closed_today)
-            daily_part = "\n\n" + daily_summary_he(
+            daily_part = "\n" + daily_summary_he(
                 day_score,
                 len(closed_today),
                 total_minutes,
@@ -1756,8 +1756,7 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
     send_message(
         chat_id,
         f"{round(duration_minutes)} דקות ב{session['city']}."
-        f"{budget_part}"
-        f"{daily_part}\n\n"
+        f"{daily_part}\n"
         "כדי לראות את הנתונים באזור האישי — לחצו\n"
         "/dashboard",
     )

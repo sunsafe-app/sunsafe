@@ -170,20 +170,22 @@ with patch.object(bc, "send_message", fake_send_message), \
         crash_detail = str(e)
     check("handle_end_session: refresh raises -> does not crash /end_session", crashed is False, "" if not crashed else crash_detail)
     if not crashed:
-        # לא בודקים מילה ספציפית בנוסח (הוא נערך ביד ב-2026-09-14) אלא את
-        # מה שההודעה חייבת לשאת: העיר ומדד החשיפה.
+        # לא בודקים מילה ספציפית בנוסח אלא את מה שההודעה חייבת לשאת:
+        # העיר וההפניה לדשבורד.
         msg = sent_messages[0] if sent_messages else ""
         check(
             "handle_end_session: refresh raises -> still sends a completion message",
-            len(sent_messages) == 1 and "מצפה רמון" in msg and "מדד חשיפה" in msg,
+            len(sent_messages) == 1 and "מצפה רמון" in msg and "/dashboard" in msg,
             f"-> {sent_messages}",
         )
-        # הרענון נכשל, אז ה-UV שמוצג הוא הדגימה המקורית ולא ממוצע —
-        # ההודעה חייבת לומר "UV" ולא "UV ממוצע", אחרת היא משקרת על
-        # מקור המספר (2026-09-15).
+        # 16.9.2026: שורת "מדד חשיפה: X% — Y מתוך Z הדקות המותרות לכם
+        # ב-UV ממוצע N" הוסרה מההודעה לבקשת המשתמש, ואיתה גם תווית
+        # ה-UV. הבדיקה שנשארה היא מה שבאמת חשוב ולא השתנה: ה-UV שנכתב
+        # ל-DB הוא הדגימה המקורית ולא ממוצע שנכשל להישלף — זה נבדק
+        # למטה על updated. ההודעה עצמה כבר לא נוקבת ב-UV בכלל.
         check(
-            "handle_end_session: refresh failed -> the UV is not labelled as an average",
-            "UV ממוצע" not in msg and "UV 3.3" in msg,
+            "handle_end_session: the message no longer quotes a UV figure",
+            "UV" not in msg,
             f"-> {msg}",
         )
         if updated:

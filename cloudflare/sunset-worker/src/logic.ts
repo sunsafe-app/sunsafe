@@ -135,36 +135,25 @@ export function exposureBar(score: number, cells: number = DAILY_BAR_CELLS): str
   return out;
 }
 
-const DAILY_HEADLINES = {
-  good: "בטווח הבטוח.",
-  warning: "בטווח הבינוני.",
-  serious: "בטווח הגבוה.",
-  critical: "חשיפה מלאה — עברתם את התקציב היומי.",
-} as const;
-
+/**
+ * בלוק הסיכום היומי — סרגל, אחוז, ודקות בשמש.
+ *
+ * 16.9.2026, סבב שני: כלל גם שורת רמה במילים וגם "הגבוה ביותר",
+ * ושתיהן הוסרו בבקשת המשתמש (ההודעה הגיעה לתשע שורות על session של
+ * אפס דקות). sessionCount ו-peak* נשארים בחתימה כי ה-fixture
+ * וה-Worker מעבירים אותם ועשויים לחזור לתצוגה.
+ */
 export function dailySummaryHe(
   dayScore: number,
-  sessionCount: number,
+  _sessionCount: number,
   totalMinutes: number,
-  peakCity?: string | null,
-  peakScore?: number | null,
+  _peakCity?: string | null,
+  _peakScore?: number | null,
 ): string {
-  let headline: string = DAILY_HEADLINES[scoreToLevel(dayScore)];
-  if (dayScore < 100) headline += ` עוד ${100 - dayScore}% עד חשיפה מלאה.`;
-
-  // sessionCount מגיע אבל לא מוצג — ראו ההערה ב-daily_summary_he
-  // בפייתון. הוא קובע רק אם יש "הגבוה ביותר" להציג.
-  const minutes = pythonRound(totalMinutes);
-  const lines = [
+  return [
     `${exposureBar(dayScore)}  ${dayScore}%`,
-    headline,
-    "",
-    `היום: ${minutes} דקות בשמש`,
-  ];
-  if (peakCity && peakScore !== null && peakScore !== undefined && sessionCount > 1) {
-    lines.push(`הגבוה ביותר: ${peakCity}, ${peakScore}%`);
-  }
-  return lines.join("\n");
+    `היום: ${pythonRound(totalMinutes)} דקות בשמש`,
+  ].join("\n");
 }
 
 export function buildCompletionMessage(params: {
@@ -185,25 +174,21 @@ export function buildCompletionMessage(params: {
     peakScore?: number | null;
   } | null;
 }): string {
-  const { durationMinutes, city, score, uvIndex, uvIsAverage, skinType, spf, daily } = params;
-  const budget = safeExposureMinutes(uvIndex, skinType, spf);
-  const uvLabel = uvIsAverage ? "UV ממוצע" : "UV";
+  const { durationMinutes, city, daily } = params;
 
-  const budgetPart = budget
-    ? `\nמדד חשיפה: ${score}% — ${pythonRound(durationMinutes)} מתוך ` +
-      `${pythonRound(budget)} הדקות המותרות לכם ב-${uvLabel} ${uvIndex.toFixed(1)}.`
-    : `\nמדד חשיפה: ${score}%.`;
-
+  // שורת "מדד חשיפה: X% — Y מתוך Z" הוסרה ב-16.9.2026 (ראו ההערה
+  // ב-handle_end_session בפייתון). score/uvIndex/uvIsAverage/skinType/spf
+  // נשארים בחתימה כי ה-fixture מעביר אותם וה-score נכתב ל-DB — הם פשוט
+  // לא מוצגים בהודעה.
   const dailyPart = daily
-    ? "\n\n" + dailySummaryHe(
+    ? "\n" + dailySummaryHe(
         daily.score, daily.sessionCount, daily.totalMinutes, daily.peakCity, daily.peakScore,
       )
     : "";
 
   return (
     `${pythonRound(durationMinutes)} דקות ב${city}.` +
-    `${budgetPart}` +
-    `${dailyPart}\n\n` +
+    `${dailyPart}\n` +
     "כדי לראות את הנתונים באזור האישי — לחצו\n" +
     "/dashboard"
   );

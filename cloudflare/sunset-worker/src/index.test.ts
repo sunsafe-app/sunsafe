@@ -194,8 +194,10 @@ test("weighted-UV refresh is used when available, and labelled as an average", a
   const patch = calls.find((c) => c.method === "PATCH")!.body as Record<string, number>;
   assert.equal(patch.uv_index, 8, "the refreshed average should replace the snapshot");
 
-  const text = (calls.find((c) => c.url.includes("api.telegram.org"))!.body as { text: string }).text;
-  assert.match(text, /UV ממוצע 8\.0/);
+  // ההודעה כבר לא נוקבת ב-UV (16.9.2026, קיצוץ הנוסח), אז מה שמוכיח
+  // שהרענון נעשה הוא uv_index שנכתב ל-DB — נבדק למעלה. כאן רק שהודעה
+  // אכן נשלחה.
+  assert.ok(calls.some((c) => c.url.includes("api.telegram.org")), "the user is notified");
 });
 
 test("refresh failure falls back to the stored snapshot, labelled as plain UV", async () => {
@@ -205,9 +207,7 @@ test("refresh failure falls back to the stored snapshot, labelled as plain UV", 
   const patch = calls.find((c) => c.method === "PATCH")!.body as Record<string, number>;
   assert.equal(patch.uv_index, 6.3, "should keep the snapshot taken at session start");
 
-  const text = (calls.find((c) => c.url.includes("api.telegram.org"))!.body as { text: string }).text;
-  assert.match(text, /ב-UV 6\.3/);
-  assert.doesNotMatch(text, /ממוצע/);
+  assert.ok(calls.some((c) => c.url.includes("api.telegram.org")), "the user is notified");
 });
 
 test("one bad row does not abort the whole sweep", async () => {
@@ -239,9 +239,14 @@ test("the message carries the cumulative daily bar, not just this session", asyn
 
   const text = (calls.find((c) => c.url.includes("api.telegram.org"))!.body as { text: string }).text;
   assert.match(text, /105%/, "the day should be 40+35+30, not the max");
-  assert.match(text, /חשיפה מלאה/, "over 100% reads as full exposure");
   assert.ok(text.includes("🟥".repeat(10)), "over 100% the bar is all red");
-  assert.match(text, /הגבוה ביותר: אילת, 40%/);
+  // 25 (אילת) + 20 (ירושלים) + 240 (ירוחם, START->NOW) = 285
+  assert.match(text, /היום: 285 דקות בשמש/);
+  // ההודעה צומצמה ב-16.9.2026: בלי שורת תקציב, בלי רמה במילים, בלי
+  // "הגבוה ביותר". ארבע שורות ועוד ה-/dashboard.
+  assert.ok(!text.includes("מדד חשיפה:"), "the budget line should be gone");
+  assert.ok(!text.includes("בטווח"), "no interpretive level line");
+  assert.ok(!text.includes("הגבוה ביותר"), "no peak line");
   // מספר ה-sessions הוסר במכוון: בבדיקה אמיתית יצא "16 sessions ·
   // 23 דקות בשמש", כלומר 1.4 דקות לכל אחד. הוא מודד לחיצות על
   // /start_session, לא חשיפה לשמש.
