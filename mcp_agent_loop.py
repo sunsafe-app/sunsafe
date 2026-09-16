@@ -26,6 +26,8 @@ from google.genai import types
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
+from rate_limit import spend_gemini
+
 load_dotenv()
 
 logger = logging.getLogger("sunsafe.mcp_agent")
@@ -142,6 +144,14 @@ async def agent_loop_mcp(
                     tools=[types.Tool(function_declarations=tool_declarations)]
                 ),
             )
+            # תקציב Gemini (16.9.2026). כל שאלה חופשית עולה כאן
+            # *כמה* קריאות — אחת לפתיחה ואחת לכל סבב כלים — וזה
+            # הנתיב היקר ביותר בבוט. ההמתנה ארוכה: המשתמש כבר ממתין
+            # לתשובה, ו-20 שניות עדיפות על כשל. acquire חוסם, וזה
+            # בסדר כאן — chat.send_message עצמה סינכרונית וחוסמת,
+            # וה-event loop הזה מוקדש לשאלה הבודדת הזו בלבד.
+            if not spend_gemini("agent loop (opening)", timeout=20.0):
+                raise RuntimeError("Gemini rate budget exhausted before the agent could start")
             response = chat.send_message(task)
 
             for i in range(max_iterations):
@@ -165,6 +175,8 @@ async def agent_loop_mcp(
                             name=fc.name, response={"result": parsed}
                         )
                     )
+                if not spend_gemini(f"agent loop (iteration {i})", timeout=20.0):
+                    raise RuntimeError("Gemini rate budget exhausted mid-conversation")
                 response = chat.send_message(results)
 
             raise RuntimeError(f"Agent exceeded {max_iterations} iterations")

@@ -25,7 +25,9 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -2473,9 +2475,12 @@ def _handle_freeform_question(
     תיתן תשובת מידע או הסבר שמפנה לפקודה המתאימה.
 
     הערה על latency: זו קריאה סינכרונית שמרימה subprocess (MCP server)
-    ועושה סבב-שיחה מול Gemini — לוקחת כמה שניות, וחוסמת את לולאת ה-
-    polling היחידה (poll_forever) עד שהיא מסתיימת. מקובל בהיקף הנוכחי
-    (VALID לא-פקודה הוא המקרה הנדיר, לא הנפוץ) — לא בעיה שנפתרת כאן.
+    ועושה סבב-שיחה מול Gemini — לוקחת כמה שניות. עד 16.9.2026 היא גם
+    חסמה את לולאת ה-polling כולה, כלומר שאלה אחת עצרה את *כל* המשתמשים
+    עד שהיא נענתה. זה כבר לא המצב: העיבוד עבר ל-ThreadPoolExecutor
+    (ראו UPDATE_WORKERS), אז שאלה איטית מעכבת רק את השיחה שלה. מה
+    שנשאר יקר זה הרמת ה-subprocess בכל שאלה ומכסת Gemini — ראו
+    rate_limit.py.
     """
     try:
         answer = run_agent_via_mcp(_build_freeform_task(text, lang))
@@ -2727,14 +2732,84 @@ def handle_update(update: dict) -> None:
         send_message(chat_id, t("storage_error", lang))
 
 
+# ---------------------------------------------------------------------
+# עיבוד עדכונים במקביל
+# ---------------------------------------------------------------------
+# נוסף 16.9.2026. getUpdates נשאר צרכן *יחיד* — אין ברירה, טלגרם מחזיר
+# 409 Conflict לשני מאזינים על אותו טוקן, וזו תקרה ארכיטקטונית שאין
+# חומרה שקונה דרכה. אבל ה*טיפול* בעדכונים לא חייב להיות טורי, וזה מה
+# שהיה: handle_update נקרא בלופ, אחד אחרי השני, כך שמשתמש אחד ששאל
+# שאלה חופשית (הרמת תהליך MCP + כמה סבבי Gemini — שניות) עצר את כל
+# השאר עד שקיבל תשובה.
+#
+# שתי מגבלות שהתכנון חייב לכבד, ושתיהן נובעות מהמקביליות עצמה:
+#
+# 1. **סדר בתוך שיחה.** שתי הודעות מאותו משתמש חייבות להתעבד בסדר
+#    שנשלחו — אחרת "/start_session" ו-"תל אביב" עלולים להתחלף, או
+#    ששתי לחיצות על בורר סוג-העור יתנגשו על _pending_skin_type_pick.
+#    לכן מנעול לכל chat_id: טורי בתוך שיחה, מקבילי בין שיחות. זו גם
+#    הסיבה שאין צורך במנעול על שני מילוני ה-_pending_* — הם ממופתחים
+#    לפי משתמש, ושני threads לא יגעו באותו מפתח בו-זמנית.
+#
+# 2. **מכסת Gemini.** העיבוד הטורי היה מגבִּיל-קצב בלי שתוכנן ככזה:
+#    thread אחד שמחכה ~10 שניות לתשובה לא *מסוגל* להוציא יותר מ-~6
+#    קריאות בדקה, וה-tier החינמי מוגבל ל-~15-30. ברגע שמקבילים,
+#    המגבלה המקרית הזו נעלמת וה-429-ים מתחילים. ראו rate_limit.py —
+#    בלי הדלי הזה, המקביליות הופכת "איטי" ל"נכשל".
+UPDATE_WORKERS = int(os.environ.get("UPDATE_WORKERS", "8"))
+
+_chat_locks: dict[int, threading.Lock] = {}
+_chat_locks_guard = threading.Lock()
+
+
+def _chat_lock(chat_id: int) -> threading.Lock:
+    with _chat_locks_guard:
+        return _chat_locks.setdefault(chat_id, threading.Lock())
+
+
+def _chat_id_of(update: dict) -> int | None:
+    """
+    ה-chat_id שאליו שייך העדכון, לכל סוגי העדכונים שאנחנו מטפלים בהם.
+    None = לא הצלחנו לזהות, ואז העדכון מטופל בלי מנעול (עדיף מלהפיל
+    אותו; בפועל לכל message/callback_query יש chat).
+    """
+    message = update.get("message") or update.get("edited_message") or {}
+    chat_id = (message.get("chat") or {}).get("id")
+    if chat_id is not None:
+        return chat_id
+    callback_message = (update.get("callback_query") or {}).get("message") or {}
+    return (callback_message.get("chat") or {}).get("id")
+
+
+def _handle_update_serialized(update: dict) -> None:
+    """handle_update תחת מנעול הצ'אט, עם אותו לוג כשל כמו קודם."""
+    chat_id = _chat_id_of(update)
+    try:
+        if chat_id is None:
+            handle_update(update)
+        else:
+            with _chat_lock(chat_id):
+                handle_update(update)
+    except Exception:
+        logger.exception("Failed to handle update: %s", update)
+
+
 def poll_forever() -> None:
     """
-    לולאת polling פשוטה מול getUpdates. long-polling של 30 שניות
-    לכל בקשה — לא צורך CPU/רשת מיותרים בין עדכונים.
+    לולאת polling מול getUpdates. long-polling של 30 שניות לכל בקשה —
+    לא צורך CPU/רשת מיותרים בין עדכונים.
+
+    הקליטה טורית (צרכן יחיד, כפי שטלגרם דורש) וה*עיבוד* מקבילי דרך
+    ThreadPoolExecutor — ראו ההערה מעל UPDATE_WORKERS. הלולאה עצמה
+    לא עושה שום עבודה מלבד להתקדם ב-offset ולהעביר ל-pool, ולכן
+    handler איטי לא מעכב יותר את הקליטה של עדכונים חדשים.
     """
     logger.info("Listening for commands (polling): %s", list(COMMAND_HANDLERS))
+    logger.info("Update workers: %s", UPDATE_WORKERS)
     offset = None
-    with httpx.Client() as client:
+    with httpx.Client() as client, ThreadPoolExecutor(
+        max_workers=UPDATE_WORKERS, thread_name_prefix="sunsafe-update"
+    ) as pool:
         while True:
             # קריאת ה-getUpdates עצמה עטופה עכשיו ב-try/except (בעבר לא
             # הייתה עטופה — 409 Conflict אמיתי מטלגרם, למשל משני מאזינים
@@ -2754,11 +2829,15 @@ def poll_forever() -> None:
                 continue
 
             for update in updates:
+                # ה-offset מתקדם לפני העיבוד, כמו קודם: טלגרם מקבל
+                # אישור שהעדכון נקלט ולא ישלח אותו שוב. המשמעות לא
+                # השתנתה מהמימוש הטורי — גם שם offset עלה לפני
+                # handle_update — אבל כאן היא בולטת יותר: אם התהליך
+                # ייפול בעוד עדכונים ב-pool, הם יאבדו. זו ההתנהגות
+                # שהייתה, והחלופה (אישור אחרי עיבוד) הייתה גורמת
+                # לעיבוד כפול בכל פריסה מחדש.
                 offset = update["update_id"] + 1
-                try:
-                    handle_update(update)
-                except Exception:
-                    logger.exception("Failed to handle update: %s", update)
+                pool.submit(_handle_update_serialized, update)
 
 
 # ---------------------------------------------------------------------

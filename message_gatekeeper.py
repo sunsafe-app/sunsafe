@@ -26,6 +26,8 @@ import os
 import logging
 import httpx
 
+from rate_limit import spend_gemini
+
 logger = logging.getLogger(__name__)
 
 # gemini-2.0-flash was shut down 2026-06-01. gemini-3.5-flash is the current
@@ -110,6 +112,15 @@ def classify_message(text: str) -> str:
     # not an automatic pass.
     if len(text_stripped) <= 2:
         return "NOISE"
+
+    # תקציב Gemini (16.9.2026). הגייטקיפר הוא צרכן הקריאות בנפח הגבוה
+    # ביותר — *כל* הודעת טקסט שאינה פקודה מדויקת וארוכה מ-2 תווים עולה
+    # קריאה. מאז שהעיבוד מקבילי (ראו UPDATE_WORKERS ב-bot_commands.py)
+    # שוב אין הגבלה מקרית על כמה מהן יכולות לצאת בבת אחת, אז יש דלי.
+    # נופלים *פתוח* בכוונה: שומר-סף שחוסם משתמש אמיתי גרוע מהודעת
+    # רעש אחת שעוברת, וזו בדיוק ההתנהגות שכבר יש לו בכל כשל אחר.
+    if not spend_gemini("message gatekeeper", timeout=2.0):
+        return "VALID"
 
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
