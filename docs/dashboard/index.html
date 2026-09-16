@@ -752,13 +752,24 @@
     return 1 + (labeledSpf - 1) * 0.4; // מיצוי ריאלי ~40% מה-SPF המתויג
   }
 
+  // עיגול בסגנון Python — חצי-לזוגי, לא חצי-למעלה. הבוט מחשב את הניקוד
+  // ב-round() של פייתון; Math.round של JS נותן תוצאה אחרת ב-0.58%
+  // מהמקרים, וזה ניקוד שסותר את מה שהמשתמש קיבל בטלגרם.
+  function pythonRound(value) {
+    const floor = Math.floor(value);
+    const diff = value - floor;
+    if (diff > 0.5) return floor + 1;
+    if (diff < 0.5) return floor;
+    return floor % 2 === 0 ? floor : floor + 1;
+  }
+
   function exposureScore(session, skinType) {
     if (session.uv <= 0) return 0; // UV=0 (למשל session שנפתח בלילה) — בלי חשיפה, בלי סיכון
     const duration = durationMinutes(session.start, session.end);
     const factor = SKIN_TYPE_FACTOR[skinType] || 1;
     const protection = effectiveSpf(session.spf);
     const safeMinutes = (200 / session.uv) * factor * protection;
-    return Math.round((duration / safeMinutes) * 100);
+    return pythonRound((duration / safeMinutes) * 100);
   }
 
   function scoreToStatus(score) {

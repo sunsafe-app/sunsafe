@@ -15,11 +15,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 import {
   calculateExposureScore,
   errorResponse,
   nearestHourlyUv,
   pastDaysFor,
+  pythonRound,
   validateInitData,
   validateSessionShape,
   weightedAverageUv,
@@ -235,4 +239,45 @@ test("errorResponse: correct status per error code", async () => {
     assert.deepEqual(await res.json(), { error: code });
     assert.equal(res.headers.get("Access-Control-Allow-Origin"), "*");
   }
+});
+
+// -----------------------------------------------------------------------
+// parity מול פייתון — לא מול ציפיות שכתבנו ביד
+// -----------------------------------------------------------------------
+// הבדיקות הידניות למעלה הן בדיוק הסיבה שהבאג הזה שרד: Math.round של JS
+// מעגל חצי-למעלה ו-round() של פייתון מעגל חצי-לזוגי, ואף אחד מהמקרים
+// שבחרנו ביד לא נפל בדיוק על .5. בפועל 626 מתוך 108,360 הקומבינציות
+// (0.58%) יצאו שונות — כלומר משתמש שקיבל מספר אחד מהבוט בטלגרם וראה
+// מספר אחר בדשבורד, על אותו session.
+//
+// ה-fixture נוצר ישירות מ-geo_uv_core.py, ומשותף עם ה-Worker:
+//   python cloudflare/sunset-worker/scripts/gen_fixture.py
+
+const here = dirname(fileURLToPath(import.meta.url));
+const fixture = JSON.parse(
+  readFileSync(join(here, "../../../cloudflare/sunset-worker/src/fixture.json"), "utf8"),
+) as { scores: { uv: number; skin: number; spf: number | null; duration: number; score: number }[] };
+
+test("exposure score matches the Python implementation, case for case", () => {
+  const mismatches: string[] = [];
+  for (const c of fixture.scores) {
+    const got = calculateExposureScore(c.uv, c.duration, c.skin, c.spf);
+    if (got !== c.score) {
+      mismatches.push(
+        `uv=${c.uv} skin=${c.skin} spf=${c.spf} dur=${c.duration}: ts=${got} py=${c.score}`,
+      );
+    }
+  }
+  assert.deepEqual(mismatches, [], `${mismatches.length} of ${fixture.scores.length} differ from Python`);
+});
+
+test("pythonRound rounds halves to even, where Math.round rounds up", () => {
+  assert.equal(pythonRound(0.5), 0);      // Math.round -> 1
+  assert.equal(pythonRound(1.5), 2);
+  assert.equal(pythonRound(2.5), 2);      // Math.round -> 3
+  assert.equal(pythonRound(3.5), 4);
+  assert.equal(pythonRound(-0.5), 0);
+  assert.equal(pythonRound(-1.5), -2);    // Math.round -> -1
+  assert.equal(pythonRound(2.500001), 3); // מעל חצי — למעלה, בלי קשר לזוגיות
+  assert.equal(pythonRound(7), 7);
 });

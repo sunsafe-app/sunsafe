@@ -145,6 +145,22 @@ export function effectiveSpf(labeledSpf: number | null | undefined): number {
   return 1 + (labeledSpf - 1) * 0.4;
 }
 
+/**
+ * עיגול בסגנון Python — חצי-לזוגי (banker's rounding), לא חצי-למעלה.
+ * Math.round(0.5) הוא 1 ו-Math.round(2.5) הוא 3, אבל round() בפייתון
+ * מחזיר 0 ו-2. הבוט מחשב את הניקוד בפייתון והדשבורד חישב אותו ב-JS,
+ * ומתוך 108,360 קומבינציות שנבדקו 626 (0.58%) יצאו שונות בנקודה אחת —
+ * כלומר ניקוד שהמשתמש רואה בדשבורד וסותר את מה שהבוט אמר לו בטלגרם.
+ * אותו מימוש יושב ב-cloudflare/sunset-worker/src/logic.ts.
+ */
+export function pythonRound(value: number): number {
+  const floor = Math.floor(value);
+  const diff = value - floor;
+  if (diff > 0.5) return floor + 1;
+  if (diff < 0.5) return floor;
+  return floor % 2 === 0 ? floor : floor + 1;
+}
+
 export function calculateExposureScore(
   uvIndex: number,
   durationMinutes: number,
@@ -158,7 +174,7 @@ export function calculateExposureScore(
   const factor = SKIN_TYPE_FACTOR[skinType] ?? 1.0;
   const protection = effectiveSpf(spf);
   const safeMinutes = (200 / uvIndex) * factor * protection;
-  return Math.round((durationMinutes / safeMinutes) * 100);
+  return pythonRound((durationMinutes / safeMinutes) * 100);
 }
 
 // -----------------------------------------------------------------------
