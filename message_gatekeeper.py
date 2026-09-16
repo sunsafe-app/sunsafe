@@ -158,7 +158,12 @@ def classify_message(text: str) -> str:
         }
 
         headers = {"Content-Type": "application/json"}
-        with httpx.Client(timeout=5.0) as client:
+        # 2 ולא 5 שניות (שונה 16.9.2026). ה-timeout של 5 שניות נדרך
+        # בפרודקשן ובזבז 5 שניות מתוך דקה שלמה שהמשתמש חיכה, בלי
+        # שום תועלת — הפונקציה נופלת פתוח בכל מקרה. שומר-סף שמעכב
+        # הודעה אמיתית ב-5 שניות כדי להחליט אם לסנן אותה גרוע
+        # מלתת להודעת רעש אחת לעבור אל dispatch שמתעלם ממנה בשקט.
+        with httpx.Client(timeout=2.0) as client:
             response = client.post(
                 f"{GEMINI_CLASSIFY_URL}?key={api_key}",
                 json=payload,

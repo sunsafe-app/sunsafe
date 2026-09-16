@@ -92,10 +92,27 @@ def _normalize_schema_types(schema: dict) -> dict:
     return result
 
 
+# כלים שה-Agent Loop *לא* חושף ל-Gemini.
+#
+# log_uv_reading כותב לטבלת uv_readings, ואף אחד לא קורא ממנה — לא
+# הדשבורד, לא ה-Edge Functions, ולא שום פקודה בבוט. חיפוש בכל הריפו
+# מחזיר רק כתיבות. ההערה ליד DEFAULT_SERVER_PARAMS למטה אומרת במפורש
+# שקריאות שעוברות דרך ה-Agent Loop *לא* נרשמות שם — אבל כל עוד הכלי
+# חשוף למודל, הוא קורא לו. נמדד בפרודקשן ב-16.9.2026: שאלה אחת
+# ("מה ה-UV בתל אביב?") גררה geocode_city, get_current_uv, ואז
+# log_uv_reading — סבב מודל שלם, בשביל כתיבה שאף אחד לא צורך.
+#
+# השרת ממשיך לחשוף את הכלי כרגיל; ההסתרה היא בצד ה-Agent Loop בלבד,
+# למי שכן ירצה אותו (למשל send_uv_report.py) דרך רשימה אחרת.
+AGENT_HIDDEN_TOOLS = frozenset({"log_uv_reading"})
+
+
 def mcp_tools_to_function_declarations(mcp_tools) -> list[types.FunctionDeclaration]:
     """ממיר רשימת Tools שהתקבלה מ-session.list_tools() ל-FunctionDeclaration של Gemini."""
     declarations = []
     for tool in mcp_tools:
+        if tool.name in AGENT_HIDDEN_TOOLS:
+            continue
         schema = _normalize_schema_types(
             tool.inputSchema or {"type": "OBJECT", "properties": {}}
         )

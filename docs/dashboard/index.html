@@ -1076,19 +1076,29 @@
   }
 
   /**
-   * מדד החשיפה של יום שלם — המקסימום מבין ה-sessions של אותו יום.
+   * מדד החשיפה של יום שלם — **סכום** ה-sessions של אותו יום.
    *
-   * *חייב* להיות אותו מספר שמופיע באריח "מדד חשיפה מרבי" ב-renderAnalysis
-   * (שם: Math.max(...scores)). אם שניהם יתפצלו, כפתור יצבע אדום והלוח
-   * שנפתח בלחיצה עליו יראה מספר אחר — וזה גרוע מלא לצבוע בכלל. מחזיר
-   * null ליום בלי sessions סגורים, ואז הכפתור נשאר ניטרלי.
+   * עד 16.9.2026 זה היה Math.max, וההערה כאן הצדיקה את זה בכך שהוא
+   * תואם לאריח "מדד חשיפה מרבי". אבל שני מקומות אחרים בפרויקט כבר
+   * סכמו את היום מזמן: renderMonthlyAnalysis למטה ("סכום מדד החשיפה
+   * לכל יום", עם tooltip שאומר "+X% היום · מצטבר Y%"), ו-/today בבוט
+   * (total_actual = sum). כלומר הדשבורד סתר את עצמו: יום היה נצבע לפי
+   * 47% בזמן שהגרף החודשי הראה על אותו יום +105%.
+   *
+   * סכום הוא גם המודל הנכון — נזק UV מצטבר במשך היום. מי שיצא שלוש
+   * פעמים לחצי שעה חטף את שלושתן, ו-max הציג לו אחת מהן.
+   *
+   * האריח שונה בהתאם ל"מדד חשיפה יומי". ה-session הגבוה לא נעלם —
+   * הפסים האופקיים ממוינים בסדר יורד, אז הוא תמיד הראשון.
+   *
+   * מחזיר null ליום בלי sessions סגורים, ואז הכפתור נשאר ניטרלי.
    */
   function dayScoreOf(dateStr) {
     const scores = currentUser.sessions
       .filter(s => s.date === dateStr)
       .map(s => scoreOf(s))
       .filter(n => Number.isFinite(n));
-    return scores.length ? Math.max(...scores) : null;
+    return scores.length ? scores.reduce((sum, n) => sum + n, 0) : null;
   }
 
   function renderDatePills(dates) {
@@ -1546,7 +1556,9 @@
     const totalMinutes = sessions.reduce((sum, s) => sum + durationMinutes(s.start, s.end), 0);
     const avgUv = sessions.reduce((sum, s) => sum + s.uv, 0) / sessions.length;
     const scores = sessions.map(s => scoreOf(s));
-    const dayScore = Math.max(...scores);
+    // סכום ולא מקסימום — ראו dayScoreOf. חייב להישאר זהה לו, אחרת
+    // כפתור התאריך ייצבע לפי מספר אחד והאריח יראה אחר.
+    const dayScore = scores.reduce((sum, n) => sum + n, 0);
     const dayStatus = scoreToStatus(dayScore);
 
     // --- Stat tiles ---
@@ -1565,7 +1577,7 @@
         <div class="value">${sessions.length}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">מדד חשיפה מרבי</div>
+        <div class="label">מדד חשיפה יומי</div>
         <div class="value status-${dayStatus}">${dayScore}%</div>
       </div>
     `;

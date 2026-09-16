@@ -48,6 +48,8 @@ function installFakeFetch(opts: {
   patchOk?: boolean;
   chatId?: number | null;
   hourlyUv?: (number | null)[] | null;
+  dailyRows?: { city: string; start_time: string; end_time: string | null;
+                exposure_score: number | null }[];
 }) {
   const calls: Call[] = [];
   const {
@@ -57,6 +59,7 @@ function installFakeFetch(opts: {
     patchOk = true,
     chatId = 670212669,
     hourlyUv = null,
+    dailyRows = [],
   } = opts;
 
   globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
@@ -70,6 +73,9 @@ function installFakeFetch(opts: {
     if (url.includes("/rest/v1/exposure_log") && (init?.method ?? "GET") === "GET") {
       // הבדיקה החוזרת מזוהה לפי end_time=is.null יחד עם id=eq.
       if (url.includes("id=eq.")) return json(stillOpen ? [{ id: 7 }] : []);
+      // שליפת הסיכום היומי מזוהה לפי select=city,... — שאילתה אחרת
+      // לגמרי מזו של הסבב, ומחזירה sessions *סגורים* של אותו יום.
+      if (url.includes("select=city")) return json(dailyRows);
       return json(sessions);
     }
     if (url.includes("/rest/v1/exposure_log") && init?.method === "PATCH") {
@@ -214,3 +220,55 @@ test("one bad row does not abort the whole sweep", async () => {
   // ה-session התקין נסגר למרות שהראשון בתור בעייתי.
   assert.ok(calls.some((c) => c.method === "PATCH"));
 });
+
+
+test("the message carries the cumulative daily bar, not just this session", async () => {
+  // שני sessions סגורים קודם באותו יום (40% ו-35%) ועוד אחד שנסגר
+  // כרגע. הסכום הוא מה שהמשתמש צריך לראות — נזק UV מצטבר, ו-max היה
+  // מציג לו אחד מהשלושה. "היום" הוא תאריך ה-UTC של start_time, כמו
+  // ב-_sessions_on_date בפייתון.
+  const day = START.toISOString().slice(0, 10);
+  const calls = installFakeFetch({
+    dailyRows: [
+      { city: "אילת", start_time: `${day}T05:00:00Z`, end_time: `${day}T05:25:00Z`, exposure_score: 40 },
+      { city: "ירושלים", start_time: `${day}T08:00:00Z`, end_time: `${day}T08:20:00Z`, exposure_score: 35 },
+      { city: "ירוחם", start_time: START.toISOString(), end_time: NOW.toISOString(), exposure_score: 30 },
+    ],
+  });
+  await runSweep(ENV, NOW);
+
+  const text = (calls.find((c) => c.url.includes("api.telegram.org"))!.body as { text: string }).text;
+  assert.match(text, /105%/, "the day should be 40+35+30, not the max");
+  assert.match(text, /חשיפה מלאה/, "over 100% reads as full exposure");
+  assert.ok(text.includes("🟥".repeat(10)), "over 100% the bar is all red");
+  assert.match(text, /3 sessions/);
+  assert.match(text, /הגבוה מביניהם: אילת, 40%/);
+  // והתוצאה של ה-session עצמו עדיין שם
+  assert.match(text, /דקות בירוחם/);
+});
+
+test("a day with no other closed sessions still sends, without a daily block", async () => {
+  const calls = installFakeFetch({ dailyRows: [] });
+  await runSweep(ENV, NOW);
+  const text = (calls.find((c) => c.url.includes("api.telegram.org"))!.body as { text: string }).text;
+  assert.match(text, /דקות בירוחם/);
+  assert.match(text, /\/dashboard/);
+  assert.ok(!text.includes("היום:"), "no daily block when the lookup returned nothing");
+});
+
+test("a failed daily lookup does not stop the message", async () => {
+  // הסיכום היומי הוא תוספת. אם השליפה נכשלת, המשתמש עדיין מקבל את
+  // התוצאה של ה-session שלו.
+  const calls = installFakeFetch({});
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+    if (String(input).includes("select=city")) throw new Error("daily lookup exploded");
+    return original(input as never, init as never);
+  }) as typeof fetch;
+
+  const result = await runSweep(ENV, NOW);
+  assert.equal(result.closed, 1, "the session still closes");
+  const telegram = calls.find((c) => c.url.includes("api.telegram.org"));
+  assert.ok(telegram, "the user is still notified");
+});
+

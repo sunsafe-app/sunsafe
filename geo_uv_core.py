@@ -98,6 +98,109 @@ def score_to_level(score: int) -> str:
 
 
 # ---------------------------------------------------------------------
+# סיכום יומי — צבירה על פני כל ה-sessions של אותו יום
+# ---------------------------------------------------------------------
+# נוסף 16.9.2026. עד כאן היחידה היחידה שהייתה לפרויקט היא session בודד,
+# והגדרת "ציון של יום" הייתה **המקסימום** מבין ה-sessions — גם ב-
+# _peak_exposure_session בבוט וגם ב-dayScoreOf בדשבורד.
+#
+# זו הגדרה שמקטינה סיכון. נזק UV מצטבר במשך היום: מי שיצא שלוש פעמים
+# לחצי שעה ב-UV גבוה חטף את שלושתן, ו-max היה מציג לו את אחת מהן.
+# שלושה sessions של 40% הם 120% מהתקציב היומי, לא 40%.
+#
+# **המחיר, ובמפורש:** ההגדרה של "ציון יומי" משתנה, ולכן גם dayScoreOf
+# בדשבורד עבר לסכום באותו שינוי. ההערה שם הזהירה בדיוק מזה — "אם
+# שניהם יתפצלו, כפתור יצבע אדום והלוח שנפתח בלחיצה עליו יראה מספר
+# אחר". צבעים של ימים היסטוריים בדשבורד אכן משתנים, וזה מכוון.
+#
+# מסכמים את ה-exposure_score השמורים (int לכל session), ולא מחשבים
+# מחדש מסכום דקות: זה מה שגם הבוט וגם הדשבורד מחזיקים ביד, וכך שניהם
+# מגיעים לאותו מספר בלי תלות בעיגול.
+
+DAILY_BAR_CELLS = 10
+
+# גבולות הבאנדים זהים ל-score_to_level למעלה: 40 / 70 / 100.
+_BAR_GREEN_CELLS = 4    # 0-39%
+_BAR_YELLOW_CELLS = 7   # 40-69%
+_BAR_CELL_FULL = "⬜"
+
+
+def daily_exposure_score(session_scores) -> int:
+    """
+    סכום מדדי החשיפה של כל ה-sessions הסגורים באותו יום. None מסונן
+    (session פתוח — אין לו עדיין ציון).
+    """
+    return sum(score for score in session_scores if score is not None)
+
+
+def exposure_bar(score: int, cells: int = DAILY_BAR_CELLS) -> str:
+    """
+    סרגל של ריבועי אמוג'י. הודעת טלגרם לא יכולה לשאת צבע — אין HTML
+    ואין CSS — אבל ריבועי אמוג'י נראים כבלוקים צבעוניים בכל לקוח,
+    נשארים טקסט שניתן להעתיק, ולא דורשים רנדור תמונה.
+
+    מתחת ל-100% הסרגל מתמלא דרך הבאנדים: ירוק, צהוב, כתום. ב-100%
+    ומעלה הוא כולו אדום — "חשיפה מלאה", וכאן הבאנדים כבר לא אומרים
+    כלום כי התקציב נגמר.
+
+    **הצבע לעולם לא לבד.** השורה שמתחת לסרגל נושאת את המספר ואת שם
+    הרמה במילים, כי ירוק-מול-אדום הוא בדיוק הצמד שדויטרנופיה לא
+    מבדילה — ובהודעה, בשונה מהדשבורד, אין כפתור נגישות להציע.
+    """
+    if score >= 100:
+        return "🟥" * cells
+
+    filled = min(cells, max(1, int(score / (100 / cells)))) if score > 0 else 0
+    out = []
+    for i in range(cells):
+        if i >= filled:
+            out.append(_BAR_CELL_FULL)
+        elif i < _BAR_GREEN_CELLS:
+            out.append("🟩")
+        elif i < _BAR_YELLOW_CELLS:
+            out.append("🟨")
+        else:
+            out.append("🟧")
+    return "".join(out)
+
+
+def daily_summary_he(
+    day_score: int,
+    session_count: int,
+    total_minutes: float,
+    peak_city: str | None = None,
+    peak_score: int | None = None,
+) -> str:
+    """
+    בלוק הסיכום היומי, בעברית. פונקציה טהורה — bot_commands.py שולף
+    את הנתונים, וה-Worker של השקיעה מייצר את אותו טקסט בדיוק מ-
+    logic.ts (נבדק מול fixture שנוצר מכאן).
+    """
+    level = score_to_level(day_score)
+    headline = {
+        "good": "בטווח הבטוח.",
+        "warning": "בטווח הבינוני.",
+        "serious": "בטווח הגבוה.",
+        "critical": "חשיפה מלאה — עברתם את התקציב היומי.",
+    }[level]
+
+    if day_score < 100:
+        headline += f" עוד {100 - day_score}% עד חשיפה מלאה."
+
+    minutes = round(total_minutes)
+    plural = "sessions" if session_count != 1 else "session"
+    lines = [
+        f"{exposure_bar(day_score)}  {day_score}%",
+        headline,
+        "",
+        f"היום: {session_count} {plural} · {minutes} דקות בשמש",
+    ]
+    if peak_city and peak_score is not None and session_count > 1:
+        lines.append(f"הגבוה מביניהם: {peak_city}, {peak_score}%")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------
 # Geocoding — Open-Meteo (ראשי) + Nominatim (גיבוי)
 # ---------------------------------------------------------------------
 def _raw_geocode_search(client: httpx.Client, name: str, count: int = 1) -> list[dict]:

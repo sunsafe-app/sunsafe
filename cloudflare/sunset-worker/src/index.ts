@@ -19,6 +19,7 @@
 
 import {
   buildCompletionMessage,
+  dailyExposureScore,
   calculateExposureScore,
   isPastSunset,
   pastDaysFor,
@@ -129,6 +130,50 @@ async function sendTelegram(env: Env, chatId: number, text: string): Promise<voi
   }
 }
 
+/**
+ * הסיכום היומי של המשתמש — סכום מדדי החשיפה של כל ה-sessions הסגורים
+ * שהתחילו באותו תאריך UTC. null כשאין נתון, ואז ההודעה נשלחת בלי
+ * הבלוק היומי במקום לא להישלח בכלל.
+ *
+ * "יום" הוא תאריך ה-UTC של start_time, בדיוק כמו _sessions_on_date
+ * בפייתון — ה-Worker לא בוחר הגדרה משלו. שולפים 50 אחרונים ומסננים
+ * כאן, אותו דפוס כמו handle_today, ולא range filter על start_time.
+ */
+async function fetchDailySummary(
+  env: Env, username: string, now: Date,
+): Promise<{ score: number; sessionCount: number; totalMinutes: number;
+             peakCity: string | null; peakScore: number | null } | null> {
+  const rows = await selectRows<{
+    city: string; start_time: string; end_time: string | null; exposure_score: number | null;
+  }>(
+    env,
+    `exposure_log?telegram_username=eq.${encodeURIComponent(username)}`
+    + "&select=city,start_time,end_time,exposure_score"
+    + "&order=start_time.desc&limit=50",
+  );
+
+  const today = now.toISOString().slice(0, 10);
+  const closed = rows.filter((r) =>
+    r.end_time !== null && r.exposure_score !== null
+    && r.start_time.slice(0, 10) === today);
+  if (closed.length === 0) return null;
+
+  const totalMinutes = closed.reduce((sum, r) =>
+    sum + (new Date(r.end_time!).getTime() - new Date(r.start_time).getTime()) / 60000, 0);
+
+  const peak = closed.reduce((best, r) =>
+    (best === null || (r.exposure_score ?? 0) > (best.exposure_score ?? 0)) ? r : best,
+    null as typeof closed[number] | null);
+
+  return {
+    score: dailyExposureScore(closed.map((r) => r.exposure_score)),
+    sessionCount: closed.length,
+    totalMinutes,
+    peakCity: peak?.city ?? null,
+    peakScore: peak?.exposure_score ?? null,
+  };
+}
+
 // ---------------------------------------------------------------------
 // סגירת session בודד
 // ---------------------------------------------------------------------
@@ -204,8 +249,19 @@ async function closeSession(env: Env, session: SessionRow, now: Date): Promise<b
   );
 
   if (chatId) {
+    // best-effort: ה-session כבר נסגר ונכתב, וכשל בשליפת היום לא אמור
+    // למנוע מהמשתמש את התוצאה של עצמו. השליפה *אחרי* ה-PATCH, כך
+    // שה-session שנסגר כרגע נכלל בסכום.
+    let daily = null;
+    try {
+      daily = await fetchDailySummary(env, username, now);
+    } catch (err) {
+      console.warn(`session ${id}: daily summary lookup failed: ${err}`);
+    }
+
     await sendTelegram(env, chatId, buildCompletionMessage({
-      durationMinutes, city: session.city, score, uvIndex, uvIsAverage, skinType, spf: session.spf,
+      durationMinutes, city: session.city, score, uvIndex, uvIsAverage, skinType,
+      spf: session.spf, daily,
     }));
   } else {
     console.warn(`session ${id}: no chat_id for @${username} — closed without notifying`);

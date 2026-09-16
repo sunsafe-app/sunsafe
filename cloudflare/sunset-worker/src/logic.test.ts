@@ -19,6 +19,8 @@ import { dirname, join } from "node:path";
 
 import {
   buildCompletionMessage,
+  dailySummaryHe,
+  exposureBar,
   calculateExposureScore,
   effectiveSpf,
   formatDurationHe,
@@ -34,8 +36,13 @@ const fixture = JSON.parse(readFileSync(join(here, "fixture.json"), "utf8")) as 
   scores: { uv: number; skin: number; spf: number | null; duration: number;
             score: number; safeMinutes: number | null }[];
   durations: { minutes: number; text: string }[];
+  bars: { score: number; bar: string }[];
+  dailyBlocks: { dayScore: number; sessionCount: number; totalMinutes: number;
+                 peakCity: string | null; peakScore: number | null; text: string }[];
   messages: { city: string; durationMinutes: number; uvIndex: number; skinType: number;
-              spf: number | null; uvIsAverage: boolean; text: string }[];
+              spf: number | null; uvIsAverage: boolean; text: string;
+              daily: { score: number; sessionCount: number; totalMinutes: number;
+                       peakCity: string | null; peakScore: number | null } | null }[];
 };
 
 test("exposure score matches the Python implementation, case for case", () => {
@@ -83,6 +90,7 @@ test("the completion message is byte-identical to what the bot sends", () => {
       uvIsAverage: m.uvIsAverage,
       skinType: m.skinType,
       spf: m.spf,
+      daily: m.daily,
     });
     assert.equal(got, m.text, `city=${m.city}`);
   }
@@ -149,3 +157,39 @@ test("isPastSunset never closes a session when the sunset is unknown", () => {
   // בטעות באמצע היום הוא נזק שאין ממנו חזרה.
   assert.equal(isPastSunset(now, null), false);
 });
+
+
+// ---------------------------------------------------------------------
+// הסיכום היומי — פורט מהפייתון, נבדק מול הפייתון
+// ---------------------------------------------------------------------
+// הבלוק היומי נוסף להודעת הסיום ב-16.9.2026. ה-Worker חייב לייצר אותו
+// תו-בתו כמו הבוט, אחרת משתמש שה-session שלו נסגר בשקיעה יקבל הודעה
+// אחרת ממי שסגר ידנית — וההודעה של השקיעה היא דווקא זו שהסיכום היומי
+// רלוונטי לה יותר מכל.
+
+test("the exposure bar matches Python, band for band", () => {
+  const mismatches: string[] = [];
+  for (const c of fixture.bars) {
+    const got = exposureBar(c.score);
+    if (got !== c.bar) mismatches.push(`${c.score}%: ts=${got} py=${c.bar}`);
+  }
+  assert.deepEqual(mismatches, [], `${mismatches.length} of ${fixture.bars.length} bars differ`);
+});
+
+test("the daily summary block matches Python, character for character", () => {
+  for (const c of fixture.dailyBlocks) {
+    const got = dailySummaryHe(
+      c.dayScore, c.sessionCount, c.totalMinutes, c.peakCity, c.peakScore,
+    );
+    assert.equal(got, c.text, `daily block for ${c.dayScore}% differs`);
+  }
+});
+
+test("above 100% the bar is all red, with no empty cell", () => {
+  for (const score of [100, 101, 145, 400]) {
+    const bar = exposureBar(score);
+    assert.ok(!bar.includes("\u2b1c"), `${score}% still has an empty cell`);
+    assert.ok(!bar.includes("\ud83d\udfe9"), `${score}% still has green`);
+  }
+});
+

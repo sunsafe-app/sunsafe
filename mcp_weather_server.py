@@ -62,6 +62,40 @@ UV_ARCHIVE_START = date(2022, 8, 1)
 
 
 @mcp.tool()
+async def get_weather_for_city(city_name: str) -> dict:
+    """
+    Current UV index, temperature, cloud cover and relative humidity for a
+    named city — geocoding included. Use this for any question about the
+    weather or UV *right now* in a named place; there is no need to call
+    geocode_city first.
+
+    נוסף 16.9.2026 כדי לחסוך סבב מודל שלם. ה-Agent Loop עבד כך: סבב
+    אחד ל-geocode_city, סבב שני ל-get_current_uv — שני סבבי Gemini
+    לשאלה אחת כמו "מה ה-UV בתל אביב?". נמדד בפרודקשן: חמש בקשות
+    Gemini לשאלה, ודקה שלמה מהשאלה לתשובה. שני הכלים הנפרדים נשארים
+    למקרים שבהם ה-lat/lon כבר ידועים, או לתחזית ולעבר שצריכים
+    geocode_city קודם בכל מקרה.
+
+    מחזיר dict עם "found": bool.
+    אם found=True: "name", "country", "latitude", "longitude" מה-geocoding,
+    וגם "uv_index", "temperature_2m", "cloud_cover", "relative_humidity_2m".
+    אם found=False: לא נמצאה עיר בשם הזה — אין לנחש ערכים, יש לדווח
+    על כך למשתמש.
+    """
+    logger.info("get_weather_for_city(city_name=%s)", city_name)
+    with httpx.Client() as client:
+        location = core_geocode_city(client, city_name)
+        if not location["found"]:
+            logger.info("get_weather_for_city(%s) -> city not found", city_name)
+            return {"found": False, "query": city_name}
+        weather = fetch_current_weather(client, location["latitude"], location["longitude"])
+
+    result = {**location, **weather}
+    logger.info("get_weather_for_city(%s) -> %s", city_name, result)
+    return result
+
+
+@mcp.tool()
 async def geocode_city(city_name: str) -> dict:
     """
     מאתר קואורדינטות (lat, lon) עבור שם עיר, באמצעות שירות ה-Geocoding

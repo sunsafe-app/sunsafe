@@ -42,6 +42,8 @@ from supabase_client import SupabaseError, delete_rows, insert_row, select_rows,
 from geo_uv_core import (
     calculate_exposure_score,
     safe_exposure_minutes,
+    daily_exposure_score,
+    daily_summary_he,
     geocode_city,
     get_current_uv,
     UvUnavailableError,
@@ -1715,10 +1717,47 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
         else f"\nמדד חשיפה: {score}%."
     )
 
+    # הסיכום היומי בהודעת הסיום (16.9.2026). /today כבר עשה בדיוק את
+    # החישוב הזה — sum על ה-sessions הסגורים של אותו תאריך UTC — אבל
+    # הוא פקודה שצריך לזכור לשלוח, ובלי שום צבע. מי שמסיים session
+    # מקבל עכשיו את התמונה היומית בלי לבקש.
+    #
+    # אותם עוזרים בדיוק (_sessions_on_date, _peak_exposure_session)
+    # ולא חישוב מקביל, כדי שההודעה הזו ו-/today לא יוכלו להיפרד.
+    # ה-update_rows למעלה כבר רץ, אז ה-session שנסגר כרגע נכלל בשליפה.
+    #
+    # best-effort בכוונה: ה-session כבר נסגר ונכתב, וכשל בשליפה לא
+    # אמור למנוע מהמשתמש את התוצאה של עצמו.
+    daily_part = ""
+    try:
+        recent = select_rows(
+            "exposure_log",
+            {"telegram_username": f"eq.{username}", "order": "start_time.desc", "limit": "50"},
+        )
+        todays = _sessions_on_date(recent, end_time.date())
+        closed_today = [s for s in todays if s["end_time"] and s["exposure_score"] is not None]
+        if closed_today:
+            day_score = daily_exposure_score(s["exposure_score"] for s in closed_today)
+            total_minutes = sum(
+                (datetime.fromisoformat(s["end_time"]) - datetime.fromisoformat(s["start_time"])).total_seconds() / 60
+                for s in closed_today
+            )
+            peak = _peak_exposure_session(closed_today)
+            daily_part = "\n\n" + daily_summary_he(
+                day_score,
+                len(closed_today),
+                total_minutes,
+                peak["city"] if peak else None,
+                peak["exposure_score"] if peak else None,
+            )
+    except Exception:
+        logger.exception("Could not build the daily summary for @%s", username)
+
     send_message(
         chat_id,
         f"{round(duration_minutes)} דקות ב{session['city']}."
-        f"{budget_part}\n\n"
+        f"{budget_part}"
+        f"{daily_part}\n\n"
         "כדי לראות את הנתונים באזור האישי — לחצו\n"
         "/dashboard",
     )
@@ -2415,9 +2454,12 @@ def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> s
         "מוכרת) שכבר סוננה מספאם/רעש ברורים על ידי סינון קודם:\n\n"
         f'"{user_text}"\n\n'
         "אם זו שאלה על UV/מזג אוויר במקום מסוים — ענה עליה עם הכלים "
-        "הזמינים לך. geocode_city תמיד ראשון, אסור לנחש קואורדינטות "
-        "מידע כללי. אחריו: get_current_uv למצב עכשיו, get_uv_forecast "
-        "לימים הבאים, ו-get_historical_uv לכל תאריך שכבר עבר — כולל "
+        "הזמינים לך, ובמספר הקריאות הקטן ביותר. לשאלה על *עכשיו* "
+        "קרא ל-get_weather_for_city עם שם העיר: הוא מחזיר UV, "
+        "טמפרטורה, עננות ולחות בקריאה אחת, ואין צורך ב-geocode_city "
+        "לפניו. לתחזית ולעבר כן צריך geocode_city קודם (אסור לנחש "
+        "קואורדינטות מידע כללי), ואחריו get_uv_forecast "
+        "לימים הבאים, או get_historical_uv לכל תאריך שכבר עבר — כולל "
         "אתמול, החודש שעבר או לפני שנה. אם get_historical_uv מחזיר "
         "found=false, אמור זאת כפי שהוא ואל תעריך ערך בעצמך.\n\n"
         "לשאלה יחסית (\"אתמול\", \"לפני שבוע\", \"לפני שנה\") העבר "

@@ -90,6 +90,82 @@ export function formatDurationHe(minutes: number): string {
  * הטקסט בפייתון נמצא ב-handle_end_session, ו-logic.test.ts משווה מול
  * fixture שנוצר משם.
  */
+// ---------------------------------------------------------------------
+// סיכום יומי — פורט מדויק מ-geo_uv_core.py
+// ---------------------------------------------------------------------
+// נוסף 16.9.2026, יחד עם הבלוק היומי בהודעת הסיום. **הפורט הזה הוא
+// חובה ולא נוחות:** ה-Worker שולח את *אותה* הודעה כמו הבוט, ויש כאן
+// בדיקה שמשווה אותה תו-בתו מול fixture שנוצר מהפייתון. אם הבוט מוסיף
+// בלוק וה-Worker לא, משתמש שה-session שלו נסגר בשקיעה יקבל הודעה אחרת
+// ממי שסגר ידנית — וזה בדיוק מה שה-fixture נועד למנוע.
+//
+// אורך הסרגל והבאנדים (40/70/100) זהים ל-score_to_level ולצבעי
+// הדשבורד. מעל 100% הסרגל כולו אדום.
+
+export const DAILY_BAR_CELLS = 10;
+
+const BAR_GREEN_CELLS = 4;
+const BAR_YELLOW_CELLS = 7;
+
+export function scoreToLevel(score: number): "good" | "warning" | "serious" | "critical" {
+  if (score < 40) return "good";
+  if (score < 70) return "warning";
+  if (score < 100) return "serious";
+  return "critical";
+}
+
+export function dailyExposureScore(scores: (number | null | undefined)[]): number {
+  return scores.reduce<number>((sum, n) => sum + (n ?? 0), 0);
+}
+
+export function exposureBar(score: number, cells: number = DAILY_BAR_CELLS): string {
+  if (score >= 100) return "🟥".repeat(cells);
+
+  const filled = score > 0
+    ? Math.min(cells, Math.max(1, Math.floor(score / (100 / cells))))
+    : 0;
+
+  let out = "";
+  for (let i = 0; i < cells; i++) {
+    if (i >= filled) out += "⬜";
+    else if (i < BAR_GREEN_CELLS) out += "🟩";
+    else if (i < BAR_YELLOW_CELLS) out += "🟨";
+    else out += "🟧";
+  }
+  return out;
+}
+
+const DAILY_HEADLINES = {
+  good: "בטווח הבטוח.",
+  warning: "בטווח הבינוני.",
+  serious: "בטווח הגבוה.",
+  critical: "חשיפה מלאה — עברתם את התקציב היומי.",
+} as const;
+
+export function dailySummaryHe(
+  dayScore: number,
+  sessionCount: number,
+  totalMinutes: number,
+  peakCity?: string | null,
+  peakScore?: number | null,
+): string {
+  let headline: string = DAILY_HEADLINES[scoreToLevel(dayScore)];
+  if (dayScore < 100) headline += ` עוד ${100 - dayScore}% עד חשיפה מלאה.`;
+
+  const minutes = pythonRound(totalMinutes);
+  const plural = sessionCount !== 1 ? "sessions" : "session";
+  const lines = [
+    `${exposureBar(dayScore)}  ${dayScore}%`,
+    headline,
+    "",
+    `היום: ${sessionCount} ${plural} · ${minutes} דקות בשמש`,
+  ];
+  if (peakCity && peakScore !== null && peakScore !== undefined && sessionCount > 1) {
+    lines.push(`הגבוה מביניהם: ${peakCity}, ${peakScore}%`);
+  }
+  return lines.join("\n");
+}
+
 export function buildCompletionMessage(params: {
   durationMinutes: number;
   city: string;
@@ -98,8 +174,17 @@ export function buildCompletionMessage(params: {
   uvIsAverage: boolean;
   skinType: number;
   spf: number | null | undefined;
+  // אופציונלי: כשה-Worker לא הצליח לשלוף את שאר ה-sessions של היום,
+  // ההודעה נשלחת בלי הבלוק היומי במקום לא להישלח בכלל.
+  daily?: {
+    score: number;
+    sessionCount: number;
+    totalMinutes: number;
+    peakCity?: string | null;
+    peakScore?: number | null;
+  } | null;
 }): string {
-  const { durationMinutes, city, score, uvIndex, uvIsAverage, skinType, spf } = params;
+  const { durationMinutes, city, score, uvIndex, uvIsAverage, skinType, spf, daily } = params;
   const budget = safeExposureMinutes(uvIndex, skinType, spf);
   const uvLabel = uvIsAverage ? "UV ממוצע" : "UV";
 
@@ -108,9 +193,16 @@ export function buildCompletionMessage(params: {
       `${pythonRound(budget)} הדקות המותרות לכם ב-${uvLabel} ${uvIndex.toFixed(1)}.`
     : `\nמדד חשיפה: ${score}%.`;
 
+  const dailyPart = daily
+    ? "\n\n" + dailySummaryHe(
+        daily.score, daily.sessionCount, daily.totalMinutes, daily.peakCity, daily.peakScore,
+      )
+    : "";
+
   return (
     `${pythonRound(durationMinutes)} דקות ב${city}.` +
-    `${budgetPart}\n\n` +
+    `${budgetPart}` +
+    `${dailyPart}\n\n` +
     "כדי לראות את הנתונים באזור האישי — לחצו\n" +
     "/dashboard"
   );
