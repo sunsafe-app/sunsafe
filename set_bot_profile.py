@@ -119,6 +119,7 @@ COMMANDS_EN = [
     ("start_session", "Start tracking sun exposure"),
     ("end_session", "End tracking and get your exposure score"),
     ("dashboard", "Your personal area — charts, history, editing"),
+    ("help", "All commands"),
 ]
 
 
