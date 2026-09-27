@@ -405,6 +405,10 @@
   .hbar-track {
     direction: ltr; position: relative;
     height: 11px; border-radius: 6px; background: var(--gridline);
+    /* מרווח כדי ש-.hbar-threshold::after (התווית "100%", top:-16px) לא
+       תתנגש בטקסט של .hbar-meta מעליה — קרה בשורות עם שם עיר ארוך
+       וסף שנופל בערך באמצע הרוחב (2026-09-27). */
+    margin-top: 14px;
   }
   .hbar-fill {
     position: absolute; inset-inline-start: 0; top: 0; bottom: 0;
