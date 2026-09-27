@@ -1464,7 +1464,7 @@
   function openDeleteModal(session) {
     pendingDelete = session;
     document.getElementById("delete-modal-text").textContent =
-      `למחוק את ה-session מ-${formatDate(session.date)} ב${session.city}, ${session.start}–${session.end}?`;
+      `למחוק את ה-session מ-${formatDate(session.date)} ב${session.city}, \u2066${session.start}–${session.end}\u2069?`;
     showModalError("delete-modal-error", "");
     document.getElementById("delete-modal").classList.add("open");
   }
@@ -1607,11 +1607,11 @@
       row.style.transitionDelay = `${delayMs}ms`;
       row.innerHTML = `
         <div class="tooltip">
-          ${s.city} · ${s.start}–${s.end}<br>
+          ${s.city} · <bdi>${s.start}–${s.end}</bdi><br>
           UV ${s.uv.toFixed(1)} · חשיפה ${score}% · ${STATUS[status].label}
         </div>
         <div class="hbar-meta">
-          <span class="hbar-label"><span class="hbar-rank">#${rank + 1}</span>${s.city} · ${s.start}–${s.end}</span>
+          <span class="hbar-label"><span class="hbar-rank">#${rank + 1}</span>${s.city} · <bdi>${s.start}–${s.end}</bdi></span>
           <span class="hbar-value" style="color:${STATUS[status].color}">${score}%</span>
         </div>
         <div class="hbar-track">
