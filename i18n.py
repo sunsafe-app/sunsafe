@@ -325,7 +325,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "זה הכל — אפשר להתחיל. לחצו למטה כשאתם יוצאים לשמש, "
             "ואני אחשב לכם את החשיפה.\n\n"
             "אין GPS? שלחו\n"
-            "/start_session חיפה\n\n"
+            "/start_session תל אביב\n\n"
             "— או עם קואורדינטות:\n"
             "/start_session 32.08, 34.78"
         ),
@@ -334,7 +334,7 @@ STRINGS: dict[str, dict[str, str]] = {
             "That's it — you're set. Tap below when you head out into the "
             "sun, and I'll work out your exposure.\n\n"
             "No GPS? Send\n"
-            "/start_session Haifa\n\n"
+            "/start_session Tel Aviv\n\n"
             "— or with coordinates:\n"
             "/start_session 32.08, 34.78"
         ),

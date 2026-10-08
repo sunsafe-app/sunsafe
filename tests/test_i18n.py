@@ -265,9 +265,9 @@ check("a skin button answers in the stored language",
 confirmation = msgs[0] if msgs else ""
 check("the confirmation offers a no-GPS alternative", "אין GPS" in confirmation)
 check("...naming the command, since a bare city name does NOT open a session",
-      "/start_session חיפה" in confirmation, f"-> ...{confirmation[-70:]}")
+      "/start_session תל אביב" in confirmation, f"-> ...{confirmation[-70:]}")
 check("...and showing the coordinates form too", "32.08, 34.78" in confirmation)
-check("...and in English too", "/start_session Haifa" in i18n.t("skin_saved", "en", label="x"))
+check("...and in English too", "/start_session Tel Aviv" in i18n.t("skin_saved", "en", label="x"))
 
 # הקישור לדשבורד ול-Mini App נושא את השפה
 i18n.set_lang("en")
