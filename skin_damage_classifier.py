@@ -93,6 +93,13 @@ CLASSIFICATION_PROMPT = (
 )
 
 
+# 2026-10-08: ה-reasoning מוצג למשתמש כמו שהוא, אז הוא צריך להיות
+# בשפה שלו. ה-prompt עצמו נשאר בעברית — המודל קורא אותו בכל מקרה.
+_REASONING_LANGUAGE_SUFFIX = {
+    "en": "\n\nחשוב: כתוב את שדה reasoning באנגלית (English), לא בעברית.",
+}
+
+
 def make_client() -> genai.Client:
     """Gemini Developer API — זהה ל-make_client ב-skin_type_classifier.py."""
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -129,7 +136,7 @@ def _extract_usage(response) -> dict | None:
         return None
 
 
-def classify_skin_damage_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> dict:
+def classify_skin_damage_from_image(image_bytes: bytes, mime_type: str = "image/jpeg", lang: str = "he") -> dict:
     """
     שולח תמונה בודדת ל-Gemini ומחזיר את ה-JSON הגולמי (dict) לפי
     SKIN_DAMAGE_RESPONSE_SCHEMA, בתוספת מפתח "_usage" (dict עם
@@ -149,7 +156,7 @@ def classify_skin_damage_from_image(image_bytes: bytes, mime_type: str = "image/
         model=CLASSIFIER_MODEL,
         contents=[
             types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-            CLASSIFICATION_PROMPT,
+            CLASSIFICATION_PROMPT + _REASONING_LANGUAGE_SUFFIX.get(lang, ""),
         ],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",

@@ -176,7 +176,7 @@ def fake_select_rows_with_session(table, params):
     return [{"id": 777}]
 
 
-def fake_classify_ok_mild(image_bytes, mime_type="image/jpeg"):
+def fake_classify_ok_mild(image_bytes, mime_type="image/jpeg", lang="he"):
     return {"detected": True, "severity": "mild", "confidence": "medium", "reasoning": "אודם קל בזרוע."}
 
 
@@ -214,7 +214,7 @@ with patch.object(bc, "send_message", fake_send_message), \
 # ---------------------------------------------------------------------
 # 5) חומרה severe -> ההודעה חייבת לכלול המלצה מפורשת לפנות לרופא/מיון
 # ---------------------------------------------------------------------
-def fake_classify_severe(image_bytes, mime_type="image/jpeg"):
+def fake_classify_severe(image_bytes, mime_type="image/jpeg", lang="he"):
     return {"detected": True, "severity": "severe", "confidence": "high", "reasoning": "אודם עז וסימני שלפוחיות."}
 
 
@@ -236,7 +236,7 @@ with patch.object(bc, "send_message", fake_send_message), \
     check("skin_damage_photo: severe severity still saved to DB", len(inserted_rows) == 1, f"-> {inserted_rows}")
 
 
-def fake_classify_moderate(image_bytes, mime_type="image/jpeg"):
+def fake_classify_moderate(image_bytes, mime_type="image/jpeg", lang="he"):
     return {"detected": True, "severity": "moderate", "confidence": "medium", "reasoning": "אודם משמעותי נראה לעין."}
 
 
@@ -260,7 +260,7 @@ with patch.object(bc, "send_message", fake_send_message), \
 # ---------------------------------------------------------------------
 # 6) סיווג נדחה (detected=false, לא זוהה עור) -> הודעת נפילה, בלי DB
 # ---------------------------------------------------------------------
-def fake_classify_not_detected(image_bytes, mime_type="image/jpeg"):
+def fake_classify_not_detected(image_bytes, mime_type="image/jpeg", lang="he"):
     return {"detected": False, "reasoning": "לא ניתן לזהות עור אנושי בבירור בתמונה."}
 
 
@@ -290,7 +290,7 @@ with patch.object(bc, "send_message", fake_send_message), \
 # 7) חריגה מ-classify_skin_damage_from_image (למשל כשל רשת/Gemini)
 #    -> הודעת נפילה ידידותית, בלי DB, בלי exception שדולפת החוצה
 # ---------------------------------------------------------------------
-def fake_classify_raises(image_bytes, mime_type="image/jpeg"):
+def fake_classify_raises(image_bytes, mime_type="image/jpeg", lang="he"):
     raise RuntimeError("Gemini timeout")
 
 
@@ -399,7 +399,7 @@ with patch.object(bc, "send_message", fake_send_message_raises), \
 # 9g) אינטגרציה מלאה: handle_skin_damage_photo, ADMIN_CHAT_ID מוגדר,
 #     הסיווג מחזיר "_usage" -> גם המשתמש וגם ה-admin מקבלים הודעה,
 #     ו-"_usage" לא דולף לשורת ה-DB.
-def fake_classify_with_usage(image_bytes, mime_type="image/jpeg"):
+def fake_classify_with_usage(image_bytes, mime_type="image/jpeg", lang="he"):
     return {
         "detected": True,
         "severity": "mild",
@@ -432,7 +432,7 @@ with patch.object(bc, "send_message", fake_send_message_capture), \
     )
 
 # 9h) אינטגרציה: handle_skin_type_photo — אותו עיקרון, לזרימה המקבילה
-def fake_classify_skin_type_with_usage(image_bytes, mime_type="image/jpeg"):
+def fake_classify_skin_type_with_usage(image_bytes, mime_type="image/jpeg", lang="he"):
     return {
         "detected": True,
         "skin_type": 3,

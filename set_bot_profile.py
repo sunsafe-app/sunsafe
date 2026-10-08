@@ -50,7 +50,8 @@ DESCRIPTION = (
     "מה עוד הבוט עושה:\n"
     "• /start_session — מתחיל מעקב (שיתוף מיקום או שם עיר), כולל תחזית UV\n"
     "• /end_session — מסיים ומחשב מדד חשיפה אישי (לפי סוג העור וקרם הגנה)\n"
-    "• /dashboard — אזור אישי: גרפים, היסטוריה, והוספה/עריכה של sessions"
+    "• /dashboard — אזור אישי: גרפים, היסטוריה, והוספה/עריכה של sessions\n\n"
+    "🇬🇧 English: /language en"
 )
 
 # סדר = סדר ההופעה בתפריט "/" בטלגרם. שם פקודה חייב: אותיות קטנות/
@@ -79,9 +80,10 @@ COMMANDS = [
     # אין שום דרך *לגלות* את שאר הפקודות — וזו גם הפקודה הראשונה
     # שמשתמש חדש מקליד.
     ("help", "כל הפקודות"),
+    ("language", "English / עברית"),
 ]
 
-# --- אנגלית — רדום (2026-09-14) -----------------------------------------
+# --- אנגלית (רדום 2026-09-14, הופעל מחדש 2026-10-08) --------------------
 # טלגרם תומך בפרופיל לפי שפה דרך פרמטר language_code ב-setMyCommands/
 # setMyDescription/setMyShortDescription, ובוחר אוטומטית לפי שפת הלקוח.
 #
@@ -104,14 +106,15 @@ DESCRIPTION_EN = (
     "☀️ SunSafe helps you track your daily UV exposure and avoid "
     "overexposure and sunburn.\n\n"
     "Getting started: /start — a quick intro and your skin type "
-    "(Fitzpatrick scale), which everything else builds on.\n\n"
+    "(Fitzpatrick scale).\n\n"
     "What else it does:\n"
     "• /start_session — starts tracking (share a location or type a city), "
     "with a UV forecast\n"
     "• /end_session — ends it and works out your personal exposure score "
     "(from your skin type and sunscreen)\n"
     "• /dashboard — your personal area: charts, history, and adding or "
-    "editing sessions"
+    "editing sessions\n\n"
+    "🇮🇱 עברית: /language he"
 )
 
 COMMANDS_EN = [
@@ -120,6 +123,7 @@ COMMANDS_EN = [
     ("end_session", "End tracking and get your exposure score"),
     ("dashboard", "Your personal area — charts, history, editing"),
     ("help", "All commands"),
+    ("language", "עברית / English"),
 ]
 
 
@@ -184,8 +188,16 @@ def main() -> None:
             "commands": [{"command": cmd, "description": desc} for cmd, desc in COMMANDS]
         })
 
-        # אנגלית כבויה כרגע — ומנקים רישום קודם, אם היה.
-        _clear_english(client)
+        # אנגלית — טלגרם מציג את זה אוטומטית למי שהלקוח שלו באנגלית.
+        # זה רק התפריט והתיאור; שפת התשובות עצמן נקבעת בבוט לפי
+        # users.language (ראו i18n.resolve_user_language).
+        _call(client, "setMyName", {"name": NAME_EN, "language_code": "en"})
+        _call(client, "setMyShortDescription", {"short_description": SHORT_DESCRIPTION_EN, "language_code": "en"})
+        _call(client, "setMyDescription", {"description": DESCRIPTION_EN, "language_code": "en"})
+        _call(client, "setMyCommands", {
+            "commands": [{"command": cmd, "description": desc} for cmd, desc in COMMANDS_EN],
+            "language_code": "en",
+        })
 
     print(
         "\nעודכן: Name / About / Description / Commands.\n"

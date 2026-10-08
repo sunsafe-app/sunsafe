@@ -70,7 +70,9 @@ def _score_with(users_row):
 
     def fake_select(table, params):
         if table == "exposure_log":
-            return [SESSION]
+            # 2026-10-08: סוג העור נקרא מה-session עצמו (נשמר בפתיחה), לא
+            # מ-users — ראו _begin_session. users_row מגדיר אותו כאן.
+            return [dict(SESSION, skin_type=(users_row or {}).get("skin_type"))]
         if table == "users":
             return [users_row] if users_row else []
         raise AssertionError(table)

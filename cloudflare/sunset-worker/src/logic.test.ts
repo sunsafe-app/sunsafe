@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 
 import {
   buildCompletionMessage,
+  dailySummary,
   dailySummaryHe,
   exposureBar,
   calculateExposureScore,
@@ -38,9 +39,9 @@ const fixture = JSON.parse(readFileSync(join(here, "fixture.json"), "utf8")) as 
   durations: { minutes: number; text: string }[];
   bars: { score: number; bar: string }[];
   dailyBlocks: { dayScore: number; sessionCount: number; totalMinutes: number;
-                 peakCity: string | null; peakScore: number | null; text: string }[];
+                 peakCity: string | null; peakScore: number | null; text: string; lang: "he" | "en" }[];
   messages: { city: string; durationMinutes: number; uvIndex: number; skinType: number;
-              spf: number | null; uvIsAverage: boolean; text: string;
+              spf: number | null; uvIsAverage: boolean; text: string; lang: "he" | "en";
               daily: { score: number; sessionCount: number; totalMinutes: number;
                        peakCity: string | null; peakScore: number | null } | null }[];
 };
@@ -91,8 +92,9 @@ test("the completion message is byte-identical to what the bot sends", () => {
       skinType: m.skinType,
       spf: m.spf,
       daily: m.daily,
+      lang: m.lang,
     });
-    assert.equal(got, m.text, `city=${m.city}`);
+    assert.equal(got, m.text, `city=${m.city} lang=${m.lang}`);
   }
 });
 
@@ -178,11 +180,26 @@ test("the exposure bar matches Python, band for band", () => {
 
 test("the daily summary block matches Python, character for character", () => {
   for (const c of fixture.dailyBlocks) {
-    const got = dailySummaryHe(
-      c.dayScore, c.sessionCount, c.totalMinutes, c.peakCity, c.peakScore,
+    const got = dailySummary(
+      c.dayScore, c.sessionCount, c.totalMinutes, c.peakCity, c.peakScore, c.lang,
     );
-    assert.equal(got, c.text, `daily block for ${c.dayScore}% differs`);
+    assert.equal(got, c.text, `daily block for ${c.dayScore}% (${c.lang}) differs`);
   }
+});
+
+test("dailySummaryHe is still the Hebrew variant", () => {
+  assert.equal(dailySummaryHe(40, 1, 30), dailySummary(40, 1, 30, null, null, "he"));
+});
+
+test("an unknown or missing language falls back to Hebrew", () => {
+  const base = {
+    durationMinutes: 30, city: "חיפה", score: 10, uvIndex: 5, uvIsAverage: true,
+    skinType: 3, spf: null, daily: null,
+  };
+  const he = buildCompletionMessage({ ...base, lang: "he" });
+  assert.equal(buildCompletionMessage({ ...base, lang: null }), he);
+  assert.equal(buildCompletionMessage({ ...base, lang: "fr" }), he);
+  assert.equal(buildCompletionMessage(base), he);
 });
 
 test("above 100% the bar is all red, with no empty cell", () => {

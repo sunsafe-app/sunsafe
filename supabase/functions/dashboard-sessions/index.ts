@@ -31,6 +31,8 @@ import {
   jsonResponse,
   localWallClockToUtcIso,
   pastDaysFor,
+  localizeMessage,
+  normalizeLang,
   resolveSessionTimes,
   textMatches,
   utcIsoToLocalWallClock,
@@ -93,11 +95,11 @@ async function restWrite(
 // המלא (כולל המקרה האמיתי של "סן חוסה קוסטה ריקה" מ-2026-09-08).
 // -----------------------------------------------------------------------
 
-async function rawGeocodeSearch(name: string, count: number): Promise<GeoResult[]> {
+async function rawGeocodeSearch(name: string, count: number, lang = "he"): Promise<GeoResult[]> {
   const url = new URL(GEOCODING_URL);
   url.searchParams.set("name", name);
   url.searchParams.set("count", String(count));
-  url.searchParams.set("language", "he");
+  url.searchParams.set("language", lang);
   url.searchParams.set("format", "json");
 
   const response = await fetch(url.toString());
@@ -112,12 +114,12 @@ async function rawGeocodeSearch(name: string, count: number): Promise<GeoResult[
   }));
 }
 
-async function nominatimForwardGeocode(cityName: string): Promise<GeoResult | null> {
+async function nominatimForwardGeocode(cityName: string, lang = "he"): Promise<GeoResult | null> {
   try {
     const url = new URL(NOMINATIM_SEARCH_URL);
     url.searchParams.set("q", cityName);
     url.searchParams.set("format", "json");
-    url.searchParams.set("accept-language", "he");
+    url.searchParams.set("accept-language", lang);
     url.searchParams.set("limit", "1");
     url.searchParams.set("addressdetails", "1");
 
@@ -139,8 +141,8 @@ async function nominatimForwardGeocode(cityName: string): Promise<GeoResult | nu
   }
 }
 
-async function geocodeCity(cityName: string): Promise<GeoResult | null> {
-  const direct = await rawGeocodeSearch(cityName, 1);
+async function geocodeCity(cityName: string, lang = "he"): Promise<GeoResult | null> {
+  const direct = await rawGeocodeSearch(cityName, 1, lang);
   if (direct.length > 0) return direct[0];
 
   const tokens = cityName.trim().split(/\s+/);
@@ -148,12 +150,12 @@ async function geocodeCity(cityName: string): Promise<GeoResult | null> {
     if (tokens.length <= suffixLen) break;
     const cityPart = tokens.slice(0, -suffixLen).join(" ");
     const countryHint = tokens.slice(-suffixLen).join(" ");
-    const candidates = await rawGeocodeSearch(cityPart, 10);
+    const candidates = await rawGeocodeSearch(cityPart, 10, lang);
     const match = candidates.find((c) => textMatches(countryHint, c.country));
     if (match) return match;
   }
 
-  return await nominatimForwardGeocode(cityName);
+  return await nominatimForwardGeocode(cityName, lang);
 }
 
 // -----------------------------------------------------------------------
@@ -219,8 +221,9 @@ async function buildSessionRow(
   session: SessionPayload,
   username: string,
   skinType: number,
+  lang: string = "he",
 ): Promise<BuiltRow | { error: "city_not_found" | "uv_unavailable" } | { message: string }> {
-  const geo = await geocodeCity(session.city!.trim());
+  const geo = await geocodeCity(session.city!.trim(), lang);
   if (!geo) return { error: "city_not_found" };
 
   const utcOffsetSeconds = await fetchUtcOffsetSeconds(geo.latitude, geo.longitude);
@@ -253,6 +256,7 @@ async function buildSessionRow(
       lon: geo.longitude,
       spf,
       exposure_score: score,
+      skin_type: skinType, // כמו _begin_session בבוט — הציון מחושב לפיו
     },
   };
 }
@@ -355,9 +359,12 @@ Deno.serve(async (req: Request) => {
       if (owned.length === 0) return errorResponse("session_not_found");
     }
 
-    const built = await buildSessionRow(body.session!, username, skinType);
+    const lang = normalizeLang(body.lang);
+    const built = await buildSessionRow(body.session!, username, skinType, lang);
     if ("error" in built) return errorResponse(built.error);
-    if ("message" in built) return jsonResponse({ error: "invalid_session", message: built.message }, 400);
+    if ("message" in built) {
+      return jsonResponse({ error: "invalid_session", message: localizeMessage(built.message, lang) }, 400);
+    }
 
     if (body.action === "create") {
       await restWrite("exposure_log", "POST", built.row);

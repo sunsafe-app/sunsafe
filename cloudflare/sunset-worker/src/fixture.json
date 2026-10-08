@@ -5908,7 +5908,17 @@
       "totalMinutes": 18,
       "peakCity": "חיפה",
       "peakScore": 12,
+      "lang": "he",
       "text": "🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜  12%\nהיום: 18 דקות בשמש"
+    },
+    {
+      "dayScore": 12,
+      "sessionCount": 1,
+      "totalMinutes": 18,
+      "peakCity": "חיפה",
+      "peakScore": 12,
+      "lang": "en",
+      "text": "🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜  12%\nToday: 18 min in the sun"
     },
     {
       "dayScore": 82,
@@ -5916,7 +5926,17 @@
       "totalMinutes": 71.4,
       "peakCity": "חיפה",
       "peakScore": 47,
+      "lang": "he",
       "text": "🟩🟩🟩🟩🟨🟨🟨🟧⬜⬜  82%\nהיום: 71 דקות בשמש"
+    },
+    {
+      "dayScore": 82,
+      "sessionCount": 3,
+      "totalMinutes": 71.4,
+      "peakCity": "חיפה",
+      "peakScore": 47,
+      "lang": "en",
+      "text": "🟩🟩🟩🟩🟨🟨🟨🟧⬜⬜  82%\nToday: 71 min in the sun"
     },
     {
       "dayScore": 100,
@@ -5924,7 +5944,17 @@
       "totalMinutes": 120,
       "peakCity": "אילת",
       "peakScore": 60,
+      "lang": "he",
       "text": "🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥  100%\nהיום: 120 דקות בשמש"
+    },
+    {
+      "dayScore": 100,
+      "sessionCount": 2,
+      "totalMinutes": 120,
+      "peakCity": "אילת",
+      "peakScore": 60,
+      "lang": "en",
+      "text": "🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥  100%\nToday: 120 min in the sun"
     },
     {
       "dayScore": 145,
@@ -5932,7 +5962,17 @@
       "totalMinutes": 210.5,
       "peakCity": "אילת",
       "peakScore": 90,
+      "lang": "he",
       "text": "🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥  145%\nהיום: 210 דקות בשמש"
+    },
+    {
+      "dayScore": 145,
+      "sessionCount": 2,
+      "totalMinutes": 210.5,
+      "peakCity": "אילת",
+      "peakScore": 90,
+      "lang": "en",
+      "text": "🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥  145%\nToday: 210 min in the sun"
     },
     {
       "dayScore": 0,
@@ -5940,7 +5980,17 @@
       "totalMinutes": 0,
       "peakCity": "טוקיו",
       "peakScore": 0,
+      "lang": "he",
       "text": "⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜  0%\nהיום: 0 דקות בשמש"
+    },
+    {
+      "dayScore": 0,
+      "sessionCount": 1,
+      "totalMinutes": 0,
+      "peakCity": "טוקיו",
+      "peakScore": 0,
+      "lang": "en",
+      "text": "⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜  0%\nToday: 0 min in the sun"
     },
     {
       "dayScore": 47,
@@ -5948,7 +5998,17 @@
       "totalMinutes": 55,
       "peakCity": null,
       "peakScore": null,
+      "lang": "he",
       "text": "🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜  47%\nהיום: 55 דקות בשמש"
+    },
+    {
+      "dayScore": 47,
+      "sessionCount": 2,
+      "totalMinutes": 55,
+      "peakCity": null,
+      "peakScore": null,
+      "lang": "en",
+      "text": "🟩🟩🟩🟩⬜⬜⬜⬜⬜⬜  47%\nToday: 55 min in the sun"
     }
   ],
   "messages": [
@@ -5959,8 +6019,20 @@
       "skinType": 3,
       "spf": null,
       "uvIsAverage": true,
+      "lang": "he",
       "daily": null,
       "text": "45 דקות בירוחם.\nכדי לראות את הנתונים באזור האישי — לחצו\n/dashboard"
+    },
+    {
+      "city": "ירוחם",
+      "durationMinutes": 45,
+      "uvIndex": 6.3,
+      "skinType": 3,
+      "spf": null,
+      "uvIsAverage": true,
+      "lang": "en",
+      "daily": null,
+      "text": "45 min in ירוחם.\nTo see it in your personal dashboard, tap\n/dashboard"
     },
     {
       "city": "לפקדה",
@@ -5969,8 +6041,20 @@
       "skinType": 2,
       "spf": null,
       "uvIsAverage": true,
+      "lang": "he",
       "daily": null,
       "text": "0 דקות בלפקדה.\nכדי לראות את הנתונים באזור האישי — לחצו\n/dashboard"
+    },
+    {
+      "city": "לפקדה",
+      "durationMinutes": 0,
+      "uvIndex": 1.5,
+      "skinType": 2,
+      "spf": null,
+      "uvIsAverage": true,
+      "lang": "en",
+      "daily": null,
+      "text": "0 min in לפקדה.\nTo see it in your personal dashboard, tap\n/dashboard"
     },
     {
       "city": "קריית ים",
@@ -5979,6 +6063,7 @@
       "skinType": 2,
       "spf": 30,
       "uvIsAverage": false,
+      "lang": "he",
       "daily": {
         "score": 105,
         "sessionCount": 3,
@@ -5989,12 +6074,30 @@
       "text": "150 דקות בקריית ים.\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥  105%\nהיום: 75 דקות בשמש\nכדי לראות את הנתונים באזור האישי — לחצו\n/dashboard"
     },
     {
+      "city": "קריית ים",
+      "durationMinutes": 150,
+      "uvIndex": 7.4,
+      "skinType": 2,
+      "spf": 30,
+      "uvIsAverage": false,
+      "lang": "en",
+      "daily": {
+        "score": 105,
+        "sessionCount": 3,
+        "totalMinutes": 75,
+        "peakCity": "אילת",
+        "peakScore": 40
+      },
+      "text": "150 min in קריית ים.\n🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥  105%\nToday: 75 min in the sun\nTo see it in your personal dashboard, tap\n/dashboard"
+    },
+    {
       "city": "אילת",
       "durationMinutes": 20,
       "uvIndex": 0,
       "skinType": 4,
       "spf": null,
       "uvIsAverage": true,
+      "lang": "he",
       "daily": {
         "score": 33,
         "sessionCount": 2,
@@ -6003,6 +6106,23 @@
         "peakScore": 20
       },
       "text": "20 דקות באילת.\n🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜  33%\nהיום: 40 דקות בשמש\nכדי לראות את הנתונים באזור האישי — לחצו\n/dashboard"
+    },
+    {
+      "city": "אילת",
+      "durationMinutes": 20,
+      "uvIndex": 0,
+      "skinType": 4,
+      "spf": null,
+      "uvIsAverage": true,
+      "lang": "en",
+      "daily": {
+        "score": 33,
+        "sessionCount": 2,
+        "totalMinutes": 40,
+        "peakCity": "אילת",
+        "peakScore": 20
+      },
+      "text": "20 min in אילת.\n🟩🟩🟩⬜⬜⬜⬜⬜⬜⬜  33%\nToday: 40 min in the sun\nTo see it in your personal dashboard, tap\n/dashboard"
     }
   ]
 }

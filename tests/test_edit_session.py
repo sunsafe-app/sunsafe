@@ -84,6 +84,7 @@ def _session(id_=38, start=START, end=None, uv_index=6.0, spf=None, score=None, 
         "uv_index": uv_index,
         "spf": spf,
         "exposure_score": score,
+        "skin_type": 3,  # נשמר על ה-session מאז 2026-10-08 (ראו _begin_session)
     }
     if include_latlon:
         row["lat"] = lat

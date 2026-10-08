@@ -195,6 +195,8 @@ export interface OfflineSessionInput {
 export interface SubmitRequestBody {
   initData: string;
   sessions: OfflineSessionInput[];
+  /** שפת ה-Mini App ("he"/"en") — לסיבות דחייה ולשם העיר. */
+  lang?: string;
 }
 
 export interface RejectedItem {
@@ -289,4 +291,26 @@ export function weightedAverageUv(
   }
   if (totalWeight <= 0) return null;
   return weightedSum / totalWeight;
+}
+
+// -----------------------------------------------------------------------
+// אנגלית (2026-10-08) — אותו דפוס כמו dashboard-sessions: ההודעות נשארות
+// בעברית במקורן, ומתורגמות ביציאה לפי body.lang של ה-Mini App.
+// -----------------------------------------------------------------------
+const REASONS_EN: Record<string, string> = {
+  "חסר client_uuid": "Missing client_uuid",
+  "חסר start_time/end_time": "Missing start_time/end_time",
+  "start_time/end_time לא תקינים": "Invalid start_time/end_time",
+  "end_time חייב להיות אחרי start_time": "end_time must be after start_time",
+  "session ארוך מדי (מעל 24 שעות) — כנראה טעות בנתונים":
+    "Session too long (over 24 hours) — probably a data entry mistake",
+  "קואורדינטות GPS לא תקינות": "Invalid GPS coordinates",
+  "לא הצלחנו לשחזר נתוני UV ל-session הזה (ייתכן שהוא ישן מדי, מעל 92 יום)":
+    "We couldn't recover UV data for this session (it may be too old — over 92 days)",
+  "שגיאת שרת בעיבוד ה-session": "Server error while processing the session",
+  "לא ידוע": "Unknown",
+};
+
+export function localizeReason(reason: string, lang: unknown): string {
+  return lang === "en" ? (REASONS_EN[reason] ?? reason) : reason;
 }

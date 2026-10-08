@@ -7,7 +7,7 @@
 //
 // שינוי גרסה (CACHE_NAME) מכריח רענון cache בפעם הבאה שיש קליטה.
 
-const CACHE_NAME = "sunsafe-session-v1";
+const CACHE_NAME = "sunsafe-session-v2"; // v2 (2026-10-08): אנגלית — מחליף את index.html השמור
 const PRECACHE_URLS = [
   "./",
   "./index.html",

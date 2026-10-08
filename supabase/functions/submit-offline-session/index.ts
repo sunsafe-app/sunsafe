@@ -25,6 +25,7 @@ import {
   CORS_HEADERS,
   errorResponse,
   jsonResponse,
+  localizeReason,
   pastDaysFor,
   validateInitData,
   validateSessionShape,
@@ -84,21 +85,21 @@ async function fetchHistoricalUv(
   return weightedAverageUv(times, uvs, startTimeIso, endTimeIso);
 }
 
-async function reverseGeocode(lat: number, lon: number): Promise<{ city: string; country: string | null }> {
+async function reverseGeocode(lat: number, lon: number, lang = "he"): Promise<{ city: string; country: string | null }> {
   try {
     const url = new URL(NOMINATIM_URL);
     url.searchParams.set("lat", String(lat));
     url.searchParams.set("lon", String(lon));
     url.searchParams.set("format", "json");
-    url.searchParams.set("accept-language", "he");
+    url.searchParams.set("accept-language", lang);
     const resp = await fetch(url.toString(), { headers: { "User-Agent": NOMINATIM_USER_AGENT } });
-    if (!resp.ok) return { city: "לא ידוע", country: null };
+    if (!resp.ok) return { city: localizeReason("לא ידוע", lang), country: null };
     const data = await resp.json();
     const addr = data?.address ?? {};
-    const city = addr.city || addr.town || addr.village || addr.county || "לא ידוע";
+    const city = addr.city || addr.town || addr.village || addr.county || localizeReason("לא ידוע", lang);
     return { city, country: addr.country ?? null };
   } catch {
-    return { city: "לא ידוע", country: null };
+    return { city: localizeReason("לא ידוע", lang), country: null };
   }
 }
 
@@ -118,6 +119,7 @@ async function processSession(
   session: OfflineSessionInput,
   username: string,
   skinType: number,
+  lang: string = "he",
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   const shapeError = validateSessionShape(session);
   if (shapeError) return { ok: false, reason: shapeError };
@@ -127,7 +129,7 @@ async function processSession(
     return { ok: false, reason: "לא הצלחנו לשחזר נתוני UV ל-session הזה (ייתכן שהוא ישן מדי, מעל 92 יום)" };
   }
 
-  const { city, country } = await reverseGeocode(session.start_lat, session.start_lon);
+  const { city, country } = await reverseGeocode(session.start_lat, session.start_lon, lang);
   const durationMinutes = (new Date(session.end_time).getTime() - new Date(session.start_time).getTime()) / 60000;
   const score = calculateExposureScore(uvIndex, durationMinutes, skinType, session.spf ?? null);
 
@@ -142,6 +144,7 @@ async function processSession(
     lon: session.start_lon,
     spf: session.spf ?? null,
     exposure_score: score,
+    skin_type: skinType, // כמו _begin_session בבוט — הציון מחושב לפיו
     client_uuid: session.client_uuid,
   });
 
@@ -188,6 +191,7 @@ Deno.serve(async (req: Request) => {
     }
     const skinType = users[0].skin_type;
 
+    const lang = body.lang === "en" ? "en" : "he";
     const accepted: string[] = [];
     const rejected: RejectedItem[] = [];
 
@@ -195,12 +199,12 @@ Deno.serve(async (req: Request) => {
     // אופליין ריאליות קטנות (כמה sessions בודדים, לא מאות).
     for (const session of body.sessions) {
       try {
-        const result = await processSession(session, username, skinType);
+        const result = await processSession(session, username, skinType, lang);
         if (result.ok) accepted.push(session.client_uuid);
-        else rejected.push({ client_uuid: session.client_uuid, reason: result.reason });
+        else rejected.push({ client_uuid: session.client_uuid, reason: localizeReason(result.reason, lang) });
       } catch (err) {
         console.error("submit-offline-session: session failed:", err);
-        rejected.push({ client_uuid: session?.client_uuid ?? "unknown", reason: "שגיאת שרת בעיבוד ה-session" });
+        rejected.push({ client_uuid: session?.client_uuid ?? "unknown", reason: localizeReason("שגיאת שרת בעיבוד ה-session", lang) });
       }
     }
 

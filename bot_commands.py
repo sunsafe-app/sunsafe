@@ -46,7 +46,7 @@ from geo_uv_core import (
     spf_on_shelf,
     SUNSCREEN_HORIZON_MINUTES,
     daily_exposure_score,
-    daily_summary_he,
+    daily_summary,
     geocode_city,
     get_current_uv,
     UvUnavailableError,
@@ -56,7 +56,7 @@ from geo_uv_core import (
     NOMINATIM_SEARCH_URL,
 )
 import i18n
-from i18n import resolve_language, t
+from i18n import L, get_lang, resolve_user_language, set_lang, t
 from message_gatekeeper import classify_message
 # ניתוב הודעות-טקסט חופשיות (לא פקודה מוכרת, אבל לא NOISE) ל-Agent Loop
 # דרך MCP — אותו run() בדיוק ש-send_uv_report.py כבר משתמש בו, ראו
@@ -155,7 +155,9 @@ def _daily_session_summary(session: dict, skin_type: int | None, reference_spf: 
     start_dt = datetime.fromisoformat(session["start_time"])
     end_dt = datetime.fromisoformat(session["end_time"])
     duration_minutes = (end_dt - start_dt).total_seconds() / 60
-    hypothetical_score = calculate_exposure_score(session["uv_index"], duration_minutes, skin_type, reference_spf)
+    # סוג העור של ה-session עצמו אם נשמר, כדי שההשוואה תתאים לציון בפועל.
+    effective_skin_type = session.get("skin_type") or skin_type
+    hypothetical_score = calculate_exposure_score(session["uv_index"], duration_minutes, effective_skin_type, reference_spf)
     return {
         "id": session["id"],
         "city": session["city"],
@@ -195,7 +197,7 @@ def reverse_geocode_location(client: httpx.Client, lat: float, lon: float) -> di
     """
     response = client.get(
         NOMINATIM_REVERSE_URL,
-        params={"lat": lat, "lon": lon, "format": "json", "accept-language": "he"},
+        params={"lat": lat, "lon": lon, "format": "json", "accept-language": get_lang()},
         headers={"User-Agent": NOMINATIM_USER_AGENT},
         timeout=10.0,
     )
@@ -322,6 +324,8 @@ SUNSCREEN_REAPPLY_MINUTES = 120
 
 def format_duration_he(minutes: float) -> str:
     """דקות -> טקסט עברי טבעי. 32 -> "כ-32 דקות", 105 -> "כשעה ו-45 דקות"."""
+    if get_lang() == "en":
+        return format_duration_en(minutes)
     total = round(minutes)
     if total < 60:
         return f"כ-{total} דקות"
@@ -336,6 +340,16 @@ def format_duration_he(minutes: float) -> str:
 
     # פחות מ-5 דקות עודפות זה רעש בהערכה כזו, לא דיוק.
     return head if mins < 5 else f"{head} ו-{mins} דקות"
+
+
+def format_duration_en(minutes: float) -> str:
+    """32 -> "about 32 minutes", 105 -> "about 1 hour 45 minutes"."""
+    total = round(minutes)
+    if total < 60:
+        return f"about {total} minutes"
+    hours, mins = divmod(total, 60)
+    head = f"about {hours} hour" + ("s" if hours != 1 else "")
+    return head if mins < 5 else f"{head} {mins} minutes"
 
 
 def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
@@ -358,15 +372,23 @@ def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
     # מקרה, אז זה גם הטווח שיש לו משמעות וגם אפס חיכוך נוסף.
     shelf = spf_on_shelf(spf_needed_for(uv_index, skin_type, SUNSCREEN_HORIZON_MINUTES))
     if shelf == 0:
-        spf_part = "בשמש הזו לא תצטרכו קרם הגנה לשעתיים הקרובות."
+        spf_part = L(
+            "בשמש הזו לא תצטרכו קרם הגנה לשעתיים הקרובות.",
+            "In this sun you won't need sunscreen for the next two hours.",
+        )
     elif shelf is None:
         # לא נדרך בטווח של שעתיים — ראו ההערה ב-spf_on_shelf.
-        spf_part = (
+        spf_part = L(
             "בשמש הזו קרם הגנה לבדו לא יכסה שעתיים עבור סוג העור שלכם.\n"
-            "צל, כובע וחולצה — או לחזור בשעה מתקדמת יותר."
+            "צל, כובע וחולצה — או לחזור בשעה מתקדמת יותר.",
+            "In this sun, sunscreen alone won't cover two hours for your skin type.\n"
+            "Shade, a hat and a shirt — or come back later in the day.",
         )
     else:
-        spf_part = f"לשעתיים בשמש תצטרכו SPF {shelf}, ולמרוח מחדש בתום השעתיים."
+        spf_part = L(
+            f"לשעתיים בשמש תצטרכו SPF {shelf}, ולמרוח מחדש בתום השעתיים.",
+            f"For two hours in the sun you'll need SPF {shelf}, and reapply after two hours.",
+        )
 
     # **תקרת השעתיים חלה גם על המספר החשוף** (16.9.2026). היא הוחלה
     # עד כה רק על הזמן עם הקרם, וכך ב-UV 0.5 עם סוג עור 6 ההודעה
@@ -376,13 +398,15 @@ def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
     # לפחות הזכירה "לחדש כל שעתיים" — היא הוחלפה, וה-26 שעות נשארו
     # לבד ובלי הסתייגות.
     bare_part = (
-        "יותר משעתיים" if bare > SUNSCREEN_HORIZON_MINUTES else format_duration_he(bare)
+        L("יותר משעתיים", "more than two hours")
+        if bare > SUNSCREEN_HORIZON_MINUTES else format_duration_he(bare)
     )
-    return (
+    return L(
         f"לפי סוג העור שלכם, {bare_part} בשמש ישירה "
-        "עד סיכון לכוויה ללא קרם הגנה.\n"
-        f"{spf_part}"
-    )
+        "עד סיכון לכוויה ללא קרם הגנה.\n",
+        f"For your skin type: {bare_part} in direct sun "
+        "before you risk a burn without sunscreen.\n",
+    ) + spf_part
 
 
 def _mirroring_enabled(chat_id: int) -> bool:
@@ -446,10 +470,14 @@ def prompt_location_share(chat_id: int) -> None:
     """
     send_message(
         chat_id,
-        "אפשר להתחיל session ישירות מהמיקום שלכם — לחצו על הכפתור למטה, "
-        "או שלחו /start_session <שם עיר> (או קואורדינטות, למשל \"32.08, 34.78\") ידנית.",
+        L(
+            "אפשר להתחיל session ישירות מהמיקום שלכם — לחצו על הכפתור למטה, "
+            "או שלחו /start_session <שם עיר> (או קואורדינטות, למשל \"32.08, 34.78\") ידנית.",
+            "You can start a session right from your location — tap the button below, "
+            "or send /start_session <city> (or coordinates, e.g. \"32.08, 34.78\").",
+        ),
         reply_markup={
-            "keyboard": [[{"text": "📍 שתפו מיקום", "request_location": True}]],
+            "keyboard": [[{"text": L("📍 שתפו מיקום", "📍 Share location"), "request_location": True}]],
             "resize_keyboard": True,
             "one_time_keyboard": True,
         },
@@ -510,7 +538,7 @@ def _notify_admin_token_usage(feature: str, username: str, usage: dict | None) -
 # תמונה נכנסת — הצעת סוג עור (Fitzpatrick) בלבד, לא כתיבה ל-DB
 # ---------------------------------------------------------------------
 def handle_skin_type_photo(
-    chat_id: int, username: str, photo_file_id: str, lang: str = i18n.DEFAULT_LANGUAGE
+    chat_id: int, username: str, photo_file_id: str, lang: str | None = None
 ) -> None:
     """
     מוריד תמונה שנשלחה לבוט, שולח אותה ל-Gemini להערכת סוג עור (הצעה
@@ -527,7 +555,7 @@ def handle_skin_type_photo(
         photo_bytes = download_telegram_photo(client, photo_file_id)
 
     try:
-        raw = classify_skin_type_from_image(photo_bytes)
+        raw = classify_skin_type_from_image(photo_bytes, lang=get_lang())
     except Exception as e:
         logger.warning("classify_skin_type_from_image failed for @%s: %s", username, e)
         send_message(chat_id, t("photo_analysis_failed", lang), reply_markup=_skin_type_keyboard(lang))
@@ -597,11 +625,19 @@ def handle_diagnose_skin(chat_id: int, username: str, args: str) -> None:
     )
     send_message(
         chat_id,
-        "☀️ שלחו עכשיו תמונה ברורה של האזור בעור שנחשף לשמש (התמונה משמשת "
-        "רק להערכה הזו ולא נשמרת בשום מקום).\n\n"
-        "⚠️ חשוב: זו הערכה חזותית של בינה מלאכותית בלבד — לא אבחנה רפואית "
-        "ולא תחליף לרופא. אם משהו מדאיג אתכם (כאב חזק, שלפוחיות, חום), "
-        "פנו לרופא/מיון גם בלי לחכות לתשובה כאן.",
+        L(
+            "☀️ שלחו עכשיו תמונה ברורה של האזור בעור שנחשף לשמש (התמונה משמשת "
+            "רק להערכה הזו ולא נשמרת בשום מקום).\n\n"
+            "⚠️ חשוב: זו הערכה חזותית של בינה מלאכותית בלבד — לא אבחנה רפואית "
+            "ולא תחליף לרופא. אם משהו מדאיג אתכם (כאב חזק, שלפוחיות, חום), "
+            "פנו לרופא/מיון גם בלי לחכות לתשובה כאן.",
+            "☀️ Now send a clear photo of the sun-exposed skin (the photo is used "
+            "only for this check and isn't stored anywhere).\n\n"
+            "⚠️ Important: this is an AI visual estimate only — not a medical "
+            "diagnosis and not a substitute for a doctor. If anything worries you "
+            "(severe pain, blisters, fever), see a doctor or go to the ER without "
+            "waiting for an answer here.",
+        ),
     )
 
 
@@ -626,10 +662,13 @@ def handle_skin_damage_photo(chat_id: int, username: str, photo_file_id: str) ->
         photo_bytes = download_telegram_photo(client, photo_file_id)
 
     try:
-        raw = classify_skin_damage_from_image(photo_bytes)
+        raw = classify_skin_damage_from_image(photo_bytes, lang=get_lang())
     except Exception as e:
         logger.warning("classify_skin_damage_from_image failed for @%s: %s", username, e)
-        send_message(chat_id, "לא הצלחתי לנתח את התמונה כרגע. נסו שוב עם /diagnose_skin.")
+        send_message(chat_id, L(
+            "לא הצלחתי לנתח את התמונה כרגע. נסו שוב עם /diagnose_skin.",
+            "I couldn't analyse the photo right now. Try again with /diagnose_skin.",
+        ))
         return
 
     _notify_admin_token_usage("diagnose_skin", username, raw.pop("_usage", None))
@@ -637,25 +676,40 @@ def handle_skin_damage_photo(chat_id: int, username: str, photo_file_id: str) ->
     if not result["ok"]:
         send_message(
             chat_id,
-            f"לא הצלחתי להעריך את התמונה הזו ({result['reason']}). נסו תמונה "
-            "ברורה יותר של האזור עם /diagnose_skin.",
+            L(
+                f"לא הצלחתי להעריך את התמונה הזו ({result['reason']}). נסו תמונה "
+                "ברורה יותר של האזור עם /diagnose_skin.",
+                f"I couldn't assess that photo ({result['reason']}). Try a clearer "
+                "photo of the area with /diagnose_skin.",
+            ),
         )
         logger.info("Photo skin-damage classification rejected for @%s: %s", username, result)
         return
 
     severity = result["severity"]
     severity_labels = {
-        "none": "לא נראים סימני נזק",
-        "mild": "אודם קל",
-        "moderate": "אודם משמעותי",
-        "severe": "אודם עז / חשד לכוויה משמעותית",
+        "none": L("לא נראים סימני נזק", "no visible signs of damage"),
+        "mild": L("אודם קל", "mild redness"),
+        "moderate": L("אודם משמעותי", "significant redness"),
+        "severe": L("אודם עז / חשד לכוויה משמעותית", "intense redness / possible significant burn"),
     }
-    lines = [f"הערכה: {severity_labels[severity]} (ביטחון: {result['confidence']}).", result["reasoning"]]
+    lines = [
+        L(
+            f"הערכה: {severity_labels[severity]} (ביטחון: {result['confidence']}).",
+            f"Assessment: {severity_labels[severity]} (confidence: {result['confidence']}).",
+        ),
+        result["reasoning"],
+    ]
     if severity in ("moderate", "severe"):
-        lines.append(
-            "⚠️ מומלץ לפנות לרופא/מיון, בייחוד אם יש שלפוחיות, חום, או הרגשה רעה כללית."
-        )
-    lines.append("\nתזכורת: זו הערכה חזותית של בינה מלאכותית בלבד, לא אבחנה רפואית.")
+        lines.append(L(
+            "⚠️ מומלץ לפנות לרופא/מיון, בייחוד אם יש שלפוחיות, חום, או הרגשה רעה כללית.",
+            "⚠️ We recommend seeing a doctor or going to the ER, especially with blisters, "
+            "fever, or feeling generally unwell.",
+        ))
+    lines.append(L(
+        "\nתזכורת: זו הערכה חזותית של בינה מלאכותית בלבד, לא אבחנה רפואית.",
+        "\nReminder: this is an AI visual estimate only, not a medical diagnosis.",
+    ))
     send_message(chat_id, "\n".join(lines))
 
     try:
@@ -702,7 +756,10 @@ def create_magic_link(telegram_username: str) -> str:
     )
 
     logger.info("Created magic link for @%s (expires %s)", telegram_username, expires_at)
-    return f"{DASHBOARD_BASE_URL}/?token={token}"
+    # lang בקישור (2026-10-08): הדשבורד לא יודע מי המשתמש עד שהטוקן
+    # נבדק, וגם אחרי זה הוא לא קורא את users. הפרמטר הוא רק שפת תצוגה,
+    # לא הרשאה — שינוי ידני שלו לא חושף כלום.
+    return f"{DASHBOARD_BASE_URL}/?token={token}&lang={get_lang()}"
 
 
 # assets/ — תמונת עזר סטטית (לא נוצרת דינמית כמו הגרפים) לסולם
@@ -774,7 +831,7 @@ SKIN_CALLBACK_PHOTO = "photo"
 SKIN_CALLBACK_AGAIN = "again"
 
 
-def _skin_type_keyboard(lang: str = i18n.DEFAULT_LANGUAGE) -> dict:
+def _skin_type_keyboard(lang: str | None = None) -> dict:
     """
     שש כפתורי סוג-עור, שניים בשורה (קריא גם במסך צר), ומתחתיהם שורה
     שלמה למי שלא בטוח — צילום היד.
@@ -801,7 +858,7 @@ def _skin_type_keyboard(lang: str = i18n.DEFAULT_LANGUAGE) -> dict:
     return {"inline_keyboard": rows}
 
 
-def _skin_type_confirm_keyboard(suggested: int, lang: str = i18n.DEFAULT_LANGUAGE) -> dict:
+def _skin_type_confirm_keyboard(suggested: int, lang: str | None = None) -> dict:
     """
     אחרי הצעה מתמונה: אישור בלחיצה, או חזרה לבורר המלא.
     מחליף את "לאישור שלחו /set_skin_type 3" שהיה כאן קודם — הקלדת
@@ -821,7 +878,7 @@ def _skin_type_confirm_keyboard(suggested: int, lang: str = i18n.DEFAULT_LANGUAG
     }
 
 
-def handle_start(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+def handle_start(chat_id: int, username: str, args: str, lang: str | None = None) -> None:
     """
     הודעת פתיחה. מ-2026-09-12 מקוצרת לשתי הודעות בלבד (ברכה + תמונה עם
     כפתורים) במקום שלוש: ההודעה השלישית פירטה את כל הפקודות עוד לפני
@@ -832,7 +889,9 @@ def handle_start(chat_id: int, username: str, args: str, lang: str = i18n.DEFAUL
     מ-2026-09-14 דו-לשוני (ראו i18n.py): lang מגיע מ-language_code של
     ההודעה הנכנסת דרך ה-dispatch ב-handle_update.
     """
-    send_message(chat_id, t("welcome", lang))
+    # כפתורי השפה על הודעת הפתיחה עצמה: הניחוש הראשון (language_code של
+    # הלקוח) יכול לטעות — ישראלי עם טלגרם באנגלית — ולחיצה אחת מתקנת.
+    send_message(chat_id, t("welcome", lang), reply_markup=_language_keyboard(from_start=True))
 
     keyboard = _skin_type_keyboard(lang)
     image_bytes = _load_fitzpatrick_scale_image()
@@ -849,7 +908,7 @@ def handle_start(chat_id: int, username: str, args: str, lang: str = i18n.DEFAUL
     logger.info("Sent welcome message + skin-type picker to @%s", username)
 
 
-def handle_help(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+def handle_help(chat_id: int, username: str, args: str, lang: str | None = None) -> None:
     """
     /help — רשימת הפקודות, סטטית.
 
@@ -864,8 +923,94 @@ def handle_help(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT
 
 def handle_dashboard(chat_id: int, username: str) -> None:
     link = create_magic_link(username)
-    send_message(chat_id, f"האזור האישי שלך (בתוקף ל-24 שעות):\n{link}")
+    send_message(chat_id, L(
+        f"האזור האישי שלך (בתוקף ל-24 שעות):\n{link}",
+        f"Your personal dashboard (valid for 24 hours):\n{link}",
+    ))
     logger.info("Sent dashboard link to @%s", username)
+
+
+# ---------------------------------------------------------------------
+# שפה (2026-10-08)
+# ---------------------------------------------------------------------
+LANG_CALLBACK_PREFIX = "lang:"
+
+# None = "בדקנו ב-DB ואין". נשמר כדי לא לשאול את Supabase על כל הודעה.
+_user_language_cache: dict[str, str | None] = {}
+
+
+# סיומת לכפתורים שעל הודעת הפתיחה: לחיצה שם שולחת את כל ה-onboarding
+# מחדש בשפה החדשה (ברכה, סולם, כפתורי סוג עור), ולא רק אישור.
+LANG_FROM_START_SUFFIX = ":start"
+
+
+def _language_keyboard(from_start: bool = False) -> dict:
+    """תמיד שני הכפתורים, כל אחד בשפה שלו — מי שלא קורא את השפה הנוכחית עדיין מזהה את שלו."""
+    suffix = LANG_FROM_START_SUFFIX if from_start else ""
+    return {"inline_keyboard": [[
+        {"text": "🇮🇱 עברית", "callback_data": f"{LANG_CALLBACK_PREFIX}he{suffix}"},
+        {"text": "🇬🇧 English", "callback_data": f"{LANG_CALLBACK_PREFIX}en{suffix}"},
+    ]]}
+
+
+def _stored_language(username: str | None) -> str | None:
+    """
+    users.language, דרך מטמון. מחזירה None גם כשאין שורה (משתמש שעוד לא
+    בחר סוג עור) וגם כשהעמודה עוד לא קיימת ב-DB — כלומר הבוט ממשיך
+    לעבוד גם אם ה-migration עוד לא רץ, רק בלי זיכרון בין הפעלות.
+    """
+    if not username:
+        return None
+    if username in _user_language_cache:
+        return _user_language_cache[username]
+    try:
+        rows = select_rows("users", {"telegram_username": f"eq.{username}", "select": "language"})
+        value = i18n.normalize_language(rows[0].get("language")) if rows else None
+        # שורה קיימת בלי ערך = משתמש מלפני שהייתה עמודה — כל אלה דוברי עברית.
+        if rows and value is None:
+            value = i18n.DEFAULT_LANGUAGE
+    except SupabaseError as e:
+        # כנראה העמודה עוד לא קיימת. עברית ולא ניחוש מהלקוח: אחרת כל
+        # משתמש ותיק עם טלגרם באנגלית היה עובר לאנגלית עד שה-migration ירוץ.
+        logger.warning("Could not read users.language for @%s (migration not run?): %s", username, e)
+        return i18n.DEFAULT_LANGUAGE
+    _user_language_cache[username] = value
+    return value
+
+
+def _remember_language(username: str, lang: str) -> None:
+    """
+    שומרת במטמון וב-users. אם אין עדיין שורה, ה-update לא עושה כלום —
+    והשפה נכתבת כשהשורה נוצרת, ב-_save_skin_type.
+    """
+    _user_language_cache[username] = lang
+    try:
+        update_rows("users", {"telegram_username": f"eq.{username}"}, {"language": lang})
+    except SupabaseError as e:
+        logger.warning("Could not save users.language=%s for @%s: %s", lang, username, e)
+
+
+def handle_language(chat_id: int, username: str, args: str) -> None:
+    """/language — בחירת שפה. "/language en" עובד ישירות, בלי כפתורים."""
+    chosen = i18n.normalize_language(args)
+    if chosen:
+        _apply_language_choice(chat_id, username, chosen)
+        return
+    send_message(
+        chat_id,
+        L("באיזו שפה לדבר איתך?", "Which language should I use?"),
+        reply_markup=_language_keyboard(),
+    )
+
+
+def _apply_language_choice(chat_id: int, username: str, lang: str) -> None:
+    set_lang(lang)
+    _remember_language(username, lang)
+    send_message(chat_id, L(
+        "מעכשיו אדבר איתך בעברית 🇮🇱\nאפשר להחליף בכל רגע עם /language",
+        "I'll talk to you in English from now on 🇬🇧\nYou can switch any time with /language",
+    ))
+    logger.info("Language set to %s for @%s", lang, username)
 
 
 # ---------------------------------------------------------------------
@@ -883,8 +1028,12 @@ def handle_offline_session(chat_id: int, username: str, args: str) -> None:
     if not SESSION_MINIAPP_URL.startswith("https://"):
         send_message(
             chat_id,
-            "התכונה הזו עוד לא מוגדרת אצל מפעיל הבוט (SESSION_MINIAPP_URL "
-            "חסר/לא HTTPS). נסו שוב מאוחר יותר.",
+            L(
+                "התכונה הזו עוד לא מוגדרת אצל מפעיל הבוט (SESSION_MINIAPP_URL "
+                "חסר/לא HTTPS). נסו שוב מאוחר יותר.",
+                "This feature isn't set up by the bot operator yet "
+                "(SESSION_MINIAPP_URL missing / not HTTPS). Please try again later.",
+            ),
         )
         logger.warning(
             "SESSION_MINIAPP_URL is not HTTPS (%r) — refusing to send web_app button to @%s",
@@ -892,13 +1041,21 @@ def handle_offline_session(chat_id: int, username: str, args: str) -> None:
         )
         return
 
+    sep = "&" if "?" in SESSION_MINIAPP_URL else "?"
     send_message(
         chat_id,
-        "תיעוד session בלי קליטה — פתחו את זה עכשיו, כשיש לכם אינטרנט, "
-        "כדי שהעמוד יישמר במכשיר וימשיך לעבוד גם בלי חיבור:",
+        L(
+            "תיעוד session בלי קליטה — פתחו את זה עכשיו, כשיש לכם אינטרנט, "
+            "כדי שהעמוד יישמר במכשיר וימשיך לעבוד גם בלי חיבור:",
+            "Log a session with no signal — open this now, while you're online, "
+            "so the page is saved on your device and keeps working offline:",
+        ),
         reply_markup={
             "inline_keyboard": [[
-                {"text": "☀️ פתיחת SunSafe אופליין", "web_app": {"url": SESSION_MINIAPP_URL}},
+                {
+                    "text": L("☀️ פתיחת SunSafe אופליין", "☀️ Open SunSafe offline"),
+                    "web_app": {"url": f"{SESSION_MINIAPP_URL}{sep}lang={get_lang()}"},
+                },
             ]],
         },
     )
@@ -911,7 +1068,10 @@ def handle_offline_session(chat_id: int, username: str, args: str) -> None:
 def handle_set_skin_type(chat_id: int, username: str, args: str) -> None:
     args = args.strip()
     if not args.isdigit() or not (1 <= int(args) <= 6):
-        send_message(chat_id, "שימוש: /set_skin_type <מספר 1 עד 6> (סולם Fitzpatrick).")
+        send_message(chat_id, L(
+            "שימוש: /set_skin_type <מספר 1 עד 6> (סולם Fitzpatrick).",
+            "Usage: /set_skin_type <a number from 1 to 6> (Fitzpatrick scale).",
+        ))
         # אחרי הודעת-שימוש, תגובת-המשך סבירה היא סתם ספרה בודדת ("3")
         # בלי "/set_skin_type " לפניה — ראו _pending_skin_type_pick.
         _mark_pending_skin_type_pick(username)
@@ -921,7 +1081,7 @@ def handle_set_skin_type(chat_id: int, username: str, args: str) -> None:
 
 
 def _save_skin_type(
-    chat_id: int, username: str, skin_type: int, lang: str = i18n.DEFAULT_LANGUAGE
+    chat_id: int, username: str, skin_type: int, lang: str | None = None
 ) -> None:
     """
     שמירת סוג העור + אישור למשתמש. מופרד מ-handle_set_skin_type ב-
@@ -938,6 +1098,10 @@ def _save_skin_type(
         on_conflict="telegram_username",
     )
     logger.info("Set skin_type=%s for @%s", skin_type, username)
+    # השורה קיימת עכשיו בוודאות — זה הרגע לכתוב את השפה של משתמש חדש,
+    # שעד עכשיו חיה רק במטמון. בנפרד מה-upsert, כדי שעמודה חסרה (migration
+    # שלא רץ) לא תפיל את שמירת סוג העור עצמו.
+    _remember_language(username, get_lang())
 
     # האישור נושא גם את הצעד הבא, וגם הוא בלחיצה — זה מה שהחליף את
     # רשימת הפקודות שהייתה בהודעה השלישית של /start.
@@ -958,7 +1122,7 @@ def _save_skin_type(
 # ---------------------------------------------------------------------
 # /start_session <עיר> — וגם שיתוף מיקום ישיר (ראו handle_start_session_location)
 # ---------------------------------------------------------------------
-def _can_start_session(chat_id: int, username: str, lang: str = i18n.DEFAULT_LANGUAGE) -> bool:
+def _can_start_session(chat_id: int, username: str, lang: str | None = None) -> bool:
     """
     הבדיקות המשותפות לשני נתיבי ההתחלה (הקלדת עיר / שיתוף מיקום): יש
     סוג עור מוגדר, ואין session פתוח כבר. שולחת הודעת שגיאה בעברית
@@ -983,8 +1147,10 @@ def _can_start_session(chat_id: int, username: str, lang: str = i18n.DEFAULT_LAN
     if open_sessions:
         send_message(
             chat_id,
-            "כבר יש לך session פתוח — צריך לסגור אותו קודם:\n"
-            "/end_session",
+            L(
+                "כבר יש לך session פתוח — צריך לסגור אותו קודם:\n/end_session",
+                "You already have an open session — close it first:\n/end_session",
+            ),
         )
         return False
 
@@ -1202,7 +1368,20 @@ def render_uv_forecast_chart(hourly_times: list[str], hourly_uv: list[float], ci
         marker="o", markersize=4, markerfacecolor="#2b2b2b", zorder=3,
     )
 
-    ax.set_title(f"UV Forecast — {city_name} — Next 24 Hours", fontsize=13, pad=12)
+    # תאריך בכותרת — 24 השעות חוצות חצות, אז בלי תאריך אי אפשר לדעת
+    # אילו שעות שייכות להיום ואילו למחר (בולט במיוחד ב-session שנפתח
+    # לפנות בוקר). hourly_times כבר בזמן המקומי של המיקום — ראו
+    # timezone="auto" ב-fetch_uv_forecast_next_24h.
+    _start_date = (
+        datetime.fromisoformat(hourly_times[0]).strftime("%d.%m.%Y")
+        if hourly_times else None
+    )
+    _title = (
+        f"UV Forecast — {city_name} — {_start_date}, Next 24 Hours"
+        if _start_date
+        else f"UV Forecast — {city_name} — Next 24 Hours"
+    )
+    ax.set_title(_title, fontsize=13, pad=12)
     ax.set_ylabel("UV Index")
     ax.set_ylim(0, y_max)
     if x:
@@ -1250,7 +1429,10 @@ def send_uv_forecast_chart(chat_id: int, city_name: str, lat: float, lon: float,
             logger.info("send_uv_forecast_chart: no forecast hours available for %s, skipping", city_name)
             return
         chart_png = render_uv_forecast_chart(hourly_times, hourly_uv, city_name)
-        send_photo(chat_id, chart_png, caption=f"📊 תחזית UV ל-24 השעות הבאות ב{city_name}")
+        send_photo(chat_id, chart_png, caption=L(
+            f"📊 תחזית UV ל-24 השעות הבאות ב{city_name}",
+            f"📊 UV forecast for the next 24 hours in {city_name}",
+        ))
         logger.info("Sent UV forecast chart to chat_id=%s for %s (%d hours)", chat_id, city_name, len(hourly_uv))
     except Exception:
         logger.exception("send_uv_forecast_chart failed for chat_id=%s city=%s", chat_id, city_name)
@@ -1520,10 +1702,16 @@ def send_daily_exposure_chart(chat_id: int, todays_sessions: list[dict], target_
             hourly_times, hourly_uv, todays_sessions, reference["city"], target_date,
             utc_offset_seconds=utc_offset_seconds,
         )
-        caption = f"📊 עקומת UV ל-{target_date.strftime('%d.%m.%Y')} עם ה-sessions שלך מסומנים עליה"
+        caption = L(
+            f"📊 עקומת UV ל-{target_date.strftime('%d.%m.%Y')} עם ה-sessions שלך מסומנים עליה",
+            f"📊 UV curve for {target_date.strftime('%d.%m.%Y')} with your sessions marked on it",
+        )
         peak = _peak_exposure_session(todays_sessions)
         if peak is not None:
-            caption += f"\nהחשיפה הגבוהה ביותר: {peak['city']} ({peak['exposure_score']}%)"
+            caption += L(
+                f"\nהחשיפה הגבוהה ביותר: {peak['city']} ({peak['exposure_score']}%)",
+                f"\nHighest exposure: {peak['city']} ({peak['exposure_score']}%)",
+            )
         send_photo(chat_id, chart_png, caption=caption)
         logger.info("Sent daily exposure chart to chat_id=%s for %s", chat_id, target_date)
     except Exception as e:
@@ -1543,6 +1731,19 @@ def _begin_session(
 ) -> None:
     """כתיבת exposure_log + הודעת אישור — משותף לנתיב הקלדת-עיר ונתיב-מיקום."""
     now = datetime.now(timezone.utc)
+
+    # סוג העור נשמר על ה-session עצמו (מוזג מ-sunsafe-space, 2026-10-08):
+    # /end_session ו-Worker השקיעה מחשבים לפיו, כך ששינוי סוג עור באמצע
+    # session לא משנה את הציון שלו. 1 כשלא ידוע — סוג העור שנשרף ראשון.
+    known_skin_type = None
+    try:
+        users = select_rows("users", {"telegram_username": f"eq.{username}"})
+        if users:
+            known_skin_type = users[0].get("skin_type")
+    except Exception:
+        logger.exception("Could not fetch skin_type for @%s — using default", username)
+    skin_type = known_skin_type or 1
+
     insert_row(
         "exposure_log",
         {
@@ -1554,6 +1755,7 @@ def _begin_session(
             "uv_index": uv_index,
             "lat": lat,
             "lon": lon,
+            "skin_type": skin_type,
             "spf": None,
             "exposure_score": None,
         },
@@ -1567,21 +1769,25 @@ def _begin_session(
     # בכוונה: ה-session כבר נכתב, וכשל כאן לא אמור למנוע את האישור.
     exposure_line = None
     try:
-        users = select_rows("users", {"telegram_username": f"eq.{username}"})
-        if users:
-            exposure_line = safe_exposure_line(uv_index, users[0].get("skin_type"))
+        # רק עם סוג עור ידוע — "כמה זמן מותר לך" על סוג עור שהונח היה
+        # מציג למשתמש מספר שלא נוגע אליו.
+        exposure_line = safe_exposure_line(uv_index, known_skin_type)
     except Exception:
         logger.exception("Could not build the safe-exposure line for @%s", username)
 
     send_message(
         chat_id,
-        f"התחלת session ב{location_label} ☀️\n"
-        f"UV נוכחי: {uv_index:.1f}\n\n"
+        L(
+            f"התחלת session ב{location_label} ☀️\nUV נוכחי: {uv_index:.1f}\n\n",
+            f"Session started in {location_label} ☀️\nCurrent UV: {uv_index:.1f}\n\n",
+        )
         + (f"{exposure_line}\n\n" if exposure_line else "")
-        + "כשתסיימו, שלחו\n"
-        "/end_session\n\n"
-        "אם השתמשתם בקרם הגנה, הוסיפו את מספר ה-SPF:\n"
-        "/end_session 50",
+        + L(
+            "כשתסיימו, שלחו\n/end_session\n\n"
+            "אם השתמשתם בקרם הגנה, הוסיפו את מספר ה-SPF:\n/end_session 50",
+            "When you're done, send\n/end_session\n\n"
+            "If you used sunscreen, add its SPF number:\n/end_session 50",
+        ),
         reply_markup={"remove_keyboard": True} if clear_keyboard else None,
     )
     logger.info("Started session for @%s in %s (UV=%s)", username, city_name, uv_index)
@@ -1595,7 +1801,7 @@ def _begin_session(
 _COORDINATE_ARGS_RE = re.compile(r"^(-?\d+(?:\.\d+)?)[,\s]\s*(-?\d+(?:\.\d+)?)$")
 
 
-def handle_start_session(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+def handle_start_session(chat_id: int, username: str, args: str, lang: str | None = None) -> None:
     location_text = args.strip()
     if not _can_start_session(chat_id, username, lang):
         return
@@ -1611,8 +1817,12 @@ def handle_start_session(chat_id: int, username: str, args: str, lang: str = i18
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             send_message(
                 chat_id,
-                f"קואורדינטות לא תקינות: {lat}, {lon}. "
-                "טווח חוקי: קו רוחב (lat) בין 90- ל-90, קו אורך (lon) בין 180- ל-180.",
+                L(
+                    f"קואורדינטות לא תקינות: {lat}, {lon}. "
+                    "טווח חוקי: קו רוחב (lat) בין 90- ל-90, קו אורך (lon) בין 180- ל-180.",
+                    f"Invalid coordinates: {lat}, {lon}. "
+                    "Valid range: latitude -90 to 90, longitude -180 to 180.",
+                ),
             )
             return
         with httpx.Client() as client:
@@ -1621,27 +1831,37 @@ def handle_start_session(chat_id: int, username: str, args: str, lang: str = i18
             # ה-session עדיין נפתח: ה-UV נשלף ישירות מה-lat/lon המדויקים
             # בלי תלות בזיהוי שם, בדיוק כמו בנתיב שיתוף-המיקום.
             geo = reverse_geocode_location(client, lat, lon)
-            city_name = geo["name"] if geo["found"] else f"מיקום {lat:.4f}, {lon:.4f}"
+            city_name = geo["name"] if geo["found"] else L(
+                f"מיקום {lat:.4f}, {lon:.4f}", f"Location {lat:.4f}, {lon:.4f}"
+            )
             country = geo.get("country") if geo["found"] else None
-            uv_index = get_current_uv(client, lat, lon)
+            uv_index = _get_uv_or_notify(client, chat_id, lat, lon)
+            if uv_index is None:
+                return
         _begin_session(chat_id, username, city_name, country, uv_index, lat, lon)
         return
 
     with httpx.Client() as client:
-        geo = geocode_city(client, location_text)
+        geo = geocode_city(client, location_text, language=get_lang())
         if not geo["found"]:
             send_message(
                 chat_id,
-                f'לא הצלחתי לזהות עיר בשם "{location_text}". בדקו את האיות, או שלחו '
-                'קואורדינטות ישירות (למשל "32.08, 34.78") ונסו שוב.',
+                L(
+                    f'לא הצלחתי לזהות עיר בשם "{location_text}". בדקו את האיות, או שלחו '
+                    'קואורדינטות ישירות (למשל "32.08, 34.78") ונסו שוב.',
+                    f'I couldn\'t find a city called "{location_text}". Check the spelling, '
+                    'or send coordinates directly (e.g. "32.08, 34.78") and try again.',
+                ),
             )
             return
-        uv_index = get_current_uv(client, geo["latitude"], geo["longitude"])
+        uv_index = _get_uv_or_notify(client, chat_id, geo["latitude"], geo["longitude"])
+        if uv_index is None:
+            return
 
     _begin_session(chat_id, username, geo["name"], geo["country"], uv_index, geo["latitude"], geo["longitude"])
 
 
-def handle_start_session_location(chat_id: int, username: str, lat: float, lon: float, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+def handle_start_session_location(chat_id: int, username: str, lat: float, lon: float, lang: str | None = None) -> None:
     """
     מטפל בהודעת location שמגיעה משיתוף מיקום (כפתור request_location) —
     ראו docs/2026-08-26-location-sharing-design.md. שימוש ב-lat/lon
@@ -1650,17 +1870,50 @@ def handle_start_session_location(chat_id: int, username: str, lat: float, lon: 
     if not _can_start_session(chat_id, username, lang):
         return
 
+    # reverse geocoding הוא רק שם תצוגה (מוזג מ-sunsafe-space): אם הוא
+    # נכשל, ה-session נפתח בכל זאת — ה-UV נשלף ישירות מה-lat/lon.
     with httpx.Client() as client:
-        geo = reverse_geocode_location(client, lat, lon)
-        if not geo["found"]:
-            send_message(
-                chat_id,
-                "לא הצלחתי לזהות עיר מהמיקום ששיתפתם. נסו /start_session <שם עיר> ידנית.",
-            )
+        try:
+            geo = reverse_geocode_location(client, lat, lon)
+        except httpx.HTTPError:
+            logger.exception("Reverse geocoding failed")
+            geo = {"found": False}
+        city_name = geo["name"] if geo["found"] else L(
+            f"מיקום {lat:.4f}, {lon:.4f}", f"Location {lat:.4f}, {lon:.4f}"
+        )
+        country = geo.get("country") if geo["found"] else None
+        uv_index = _get_uv_or_notify(client, chat_id, lat, lon)
+        if uv_index is None:
             return
-        uv_index = get_current_uv(client, lat, lon)
 
-    _begin_session(chat_id, username, geo["name"], geo["country"], uv_index, lat, lon, clear_keyboard=True)
+    _begin_session(chat_id, username, city_name, country, uv_index, lat, lon, clear_keyboard=True)
+
+
+def _get_uv_or_notify(client: httpx.Client, chat_id: int, lat: float, lon: float) -> float | None:
+    """
+    get_current_uv, ואם אין UV — הודעה למשתמש ו-None (מוזג מ-sunsafe-space).
+
+    נדרש כאן ולא רק ב-_dispatch: נתיב שיתוף-המיקום נקרא ישירות
+    מ-handle_update ולא עובר דרך _dispatch, אז חריגה ממנו הייתה שקטה.
+    """
+    try:
+        return get_current_uv(client, lat, lon)
+    except (UvUnavailableError, httpx.TimeoutException, httpx.NetworkError):
+        logger.exception("No UV available for lat=%s lon=%s", lat, lon)
+        send_message(chat_id, L(
+            "לא הצלחתי לקבל כרגע את נתוני ה-UV — זו תקלה בשירות מזג האוויר, "
+            "לא אצלכם. נסו שוב בעוד כמה דקות.",
+            "I couldn't get UV data right now — that's the weather service, "
+            "not you. Try again in a few minutes.",
+        ))
+        return None
+    except httpx.HTTPStatusError:
+        logger.exception("Open-Meteo returned an HTTP error for lat=%s lon=%s", lat, lon)
+        send_message(chat_id, L(
+            "יש כרגע בעיה בקבלת נתוני ה-UV. נסו שוב מאוחר יותר.",
+            "There's a problem getting UV data right now. Try again later.",
+        ))
+        return None
 
 
 # ---------------------------------------------------------------------
@@ -1673,10 +1926,12 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
         if not args.isdigit():
             send_message(
                 chat_id,
-                "בלי קרם הגנה, שלחו\n"
-                "/end_session\n\n"
-                "— או עם קרם הגנה (מספר ה-SPF):\n"
-                "/end_session 30",
+                L(
+                    "בלי קרם הגנה, שלחו\n/end_session\n\n"
+                    "— או עם קרם הגנה (מספר ה-SPF):\n/end_session 30",
+                    "Without sunscreen, send\n/end_session\n\n"
+                    "— or with sunscreen (its SPF number):\n/end_session 30",
+                ),
             )
             return
         spf = int(args)
@@ -1686,17 +1941,20 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
         {"telegram_username": f"eq.{username}", "end_time": "is.null"},
     )
     if not open_sessions:
-        send_message(chat_id, "אין לך session פתוח כרגע. שלחו /start_session <עיר> כדי להתחיל אחד.")
+        send_message(chat_id, L(
+            "אין לך session פתוח כרגע. שלחו /start_session <עיר> כדי להתחיל אחד.",
+            "You don't have an open session. Send /start_session <city> to start one.",
+        ))
         return
 
     session = open_sessions[0]
-    users = select_rows("users", {"telegram_username": f"eq.{username}"})
+    # סוג העור שנשמר בפתיחת ה-session (ראו _begin_session; מוזג מ-sunsafe-space).
     # 1 ולא 3 (שונה 16.9.2026): 3 הוא *אמצע* הסולם, לא ברירת מחדל
     # זהירה — ההערה שהייתה כאן קראה לו כך בטעות. סוג עור 1 נשרף
     # הכי מהר (factor 0.5), כלומר הוא נותן את תקציב הזמן הקצר ביותר.
     # באפליקציית בטיחות, כשלא יודעים מי המשתמש, מניחים את מי שנשרף
     # ראשון — שגיאה לכיוון "תמרח קרם" עדיפה על שגיאה לכיוון "אתה בסדר".
-    skin_type = users[0]["skin_type"] if users else 1
+    skin_type = session.get("skin_type") or 1
 
     start_time = datetime.fromisoformat(session["start_time"])
     end_time = datetime.now(timezone.utc)
@@ -1779,22 +2037,28 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
                 for s in closed_today
             )
             peak = _peak_exposure_session(closed_today)
-            daily_part = "\n" + daily_summary_he(
+            daily_part = "\n" + daily_summary(
                 day_score,
                 len(closed_today),
                 total_minutes,
                 peak["city"] if peak else None,
                 peak["exposure_score"] if peak else None,
+                get_lang(),
             )
     except Exception:
         logger.exception("Could not build the daily summary for @%s", username)
 
     send_message(
         chat_id,
-        f"{round(duration_minutes)} דקות ב{session['city']}."
-        f"{daily_part}\n"
-        "כדי לראות את הנתונים באזור האישי — לחצו\n"
-        "/dashboard",
+        L(
+            f"{round(duration_minutes)} דקות ב{session['city']}.",
+            f"{round(duration_minutes)} min in {session['city']}.",
+        )
+        + f"{daily_part}\n"
+        + L(
+            "כדי לראות את הנתונים באזור האישי — לחצו\n/dashboard",
+            "To see it in your personal dashboard, tap\n/dashboard",
+        ),
     )
     logger.info("Ended session id=%s for @%s: score=%s", session["id"], username, score)
 
@@ -1987,7 +2251,7 @@ def fetch_sunset_utc(client: httpx.Client, lat: float, lon: float) -> datetime |
         return None
 
 
-def handle_add_session(chat_id: int, username: str, args: str, lang: str = i18n.DEFAULT_LANGUAGE) -> None:
+def handle_add_session(chat_id: int, username: str, args: str, lang: str | None = None) -> None:
     """
     /add_session <עיר> start=HH:MM end=HH:MM [spf=<מספר>] [date=D.M] [uv=<מספר>]
     לדוגמה: /add_session תל אביב start=14:00 end=16:30 spf=30
@@ -2147,16 +2411,16 @@ def handle_my_sessions(chat_id: int, username: str) -> None:
         {"telegram_username": f"eq.{username}", "order": "start_time.desc", "limit": "8"},
     )
     if not sessions:
-        send_message(chat_id, "עוד אין לך sessions רשומים. שלחו /start_session <עיר> כדי להתחיל.")
+        send_message(chat_id, L("עוד אין לך sessions רשומים. שלחו /start_session <עיר> כדי להתחיל.", "You have no sessions yet. Send /start_session <city> to start."))
         return
 
-    lines = ["ה-sessions האחרונים שלך:"]
+    lines = [L("ה-sessions האחרונים שלך:", "Your recent sessions:")]
     for s in sessions:
         start = _fmt_dt(s["start_time"])
         if s["end_time"]:
             status = f"{start}–{datetime.fromisoformat(s['end_time']).strftime('%H:%M')}"
         else:
-            status = f"{start}→פתוח"
+            status = f"{start}→" + L("פתוח", "open")
 
         extra = []
         if s["uv_index"] is not None:
@@ -2164,7 +2428,7 @@ def handle_my_sessions(chat_id: int, username: str) -> None:
         if s["spf"]:
             extra.append(f"SPF {s['spf']}")
         if s["exposure_score"] is not None:
-            extra.append(f"ציון {s['exposure_score']}%")
+            extra.append(L("ציון", "score") + f" {s['exposure_score']}%")
         extra_str = f" · {' · '.join(extra)}" if extra else ""
 
         lines.append(f"#{s['id']} · {s['city']} · {status}{extra_str}")
@@ -2173,7 +2437,7 @@ def handle_my_sessions(chat_id: int, username: str) -> None:
     # ההוספה/עריכה/מחיקה עברו לדשבורד ב-2026-09-12 (ראו
     # handle_moved_to_dashboard למטה) — הרשימה כאן נשארת לצפייה מהירה
     # בטלגרם, אבל כל שינוי בפועל נעשה באזור האישי.
-    lines.append("להוספה, עריכה או מחיקה: /dashboard")
+    lines.append(L("להוספה, עריכה או מחיקה: /dashboard", "To add, edit or delete: /dashboard"))
     send_message(chat_id, "\n".join(lines))
 
 
@@ -2204,7 +2468,7 @@ def handle_today(chat_id: int, username: str, args: str) -> None:
     target_date = datetime.now(timezone.utc).date()
     if args:
         if not args.startswith("date="):
-            send_message(chat_id, "שימוש: /today או /today date=D.M (למשל date=25.8).")
+            send_message(chat_id, L("שימוש: /today או /today date=D.M (למשל date=25.8).", "Usage: /today or /today date=D.M (e.g. date=25.8)."))
             return
         try:
             day, month = args[len("date="):].split(".")
@@ -2213,7 +2477,7 @@ def handle_today(chat_id: int, username: str, args: str) -> None:
                 candidate = candidate.replace(year=candidate.year - 1)
             target_date = candidate
         except (ValueError, IndexError):
-            send_message(chat_id, "פורמט תאריך לא תקין. השתמשו ב-date=D.M (למשל date=25.8).")
+            send_message(chat_id, L("פורמט תאריך לא תקין. השתמשו ב-date=D.M (למשל date=25.8).", "Invalid date. Use date=D.M (e.g. date=25.8)."))
             return
 
     users = select_rows("users", {"telegram_username": f"eq.{username}"})
@@ -2230,36 +2494,39 @@ def handle_today(chat_id: int, username: str, args: str) -> None:
 
     if not closed and not open_sessions:
         if target_date == datetime.now(timezone.utc).date():
-            send_message(chat_id, "עוד אין לך sessions היום. שלחו /start_session <עיר> כדי להתחיל.")
+            send_message(chat_id, L("עוד אין לך sessions היום. שלחו /start_session <עיר> כדי להתחיל.", "No sessions today yet. Send /start_session <city> to start."))
         else:
-            send_message(chat_id, f"אין לך sessions בתאריך {target_date.strftime('%d.%m.%Y')}.")
+            send_message(chat_id, L(f"אין לך sessions בתאריך {target_date.strftime('%d.%m.%Y')}.", f"You have no sessions on {target_date.strftime('%d.%m.%Y')}."))
         return
 
-    lines = [f"📊 סיכום ליום {target_date.strftime('%d.%m.%Y')}:"]
+    lines = [L(f"📊 סיכום ליום {target_date.strftime('%d.%m.%Y')}:", f"📊 Summary for {target_date.strftime('%d.%m.%Y')}:")]
 
     if closed:
         summaries = [_daily_session_summary(s, skin_type, DAILY_SUMMARY_REFERENCE_SPF) for s in closed]
         total_actual = sum(sm["actual_score"] for sm in summaries)
         total_hypothetical = sum(sm["hypothetical_score"] for sm in summaries)
-        lines.append(f'{len(closed)} sessions · סה"כ מדד חשיפה: {total_actual}%')
-        lines.append(f"עם SPF {DAILY_SUMMARY_REFERENCE_SPF} קבוע לאורך כל היום: כ-{total_hypothetical}% במקום זאת")
+        lines.append(L(f'{len(closed)} sessions · סה"כ מדד חשיפה: {total_actual}%', f"{len(closed)} sessions · total exposure score: {total_actual}%"))
+        lines.append(L(f"עם SPF {DAILY_SUMMARY_REFERENCE_SPF} קבוע לאורך כל היום: כ-{total_hypothetical}% במקום זאת", f"With SPF {DAILY_SUMMARY_REFERENCE_SPF} all day: about {total_hypothetical}% instead"))
 
         peak = _peak_exposure_session(closed)
         if peak is not None:
-            lines.append(f"מדד החשיפה הגבוה ביותר: {peak['city']} ({peak['exposure_score']}%)")
+            lines.append(L(f"מדד החשיפה הגבוה ביותר: {peak['city']} ({peak['exposure_score']}%)", f"Highest exposure score: {peak['city']} ({peak['exposure_score']}%)"))
 
         lines.append("")
         for s, sm in zip(closed, summaries):
-            spf_label = f"SPF {sm['spf']}" if sm["spf"] else "בלי קרם הגנה"
+            spf_label = f"SPF {sm['spf']}" if sm["spf"] else L("בלי קרם הגנה", "no sunscreen")
             lines.append(
                 f"#{sm['id']} · {sm['city']} · UV {s['uv_index']:.1f} · {spf_label} · "
-                f"ציון {sm['actual_score']}% (עם SPF {DAILY_SUMMARY_REFERENCE_SPF}: {sm['hypothetical_score']}%)"
+                + L("ציון", "score")
+                + f" {sm['actual_score']}% ("
+                + L("עם", "with")
+                + f" SPF {DAILY_SUMMARY_REFERENCE_SPF}: {sm['hypothetical_score']}%)"
             )
         lines.append("")
 
     if open_sessions:
         cities = ", ".join(s["city"] for s in open_sessions)
-        lines.append(f"יש לך גם session פתוח כרגע ב-{cities} — הוא יתווסף לסיכום אחרי /end_session.")
+        lines.append(L(f"יש לך גם session פתוח כרגע ב-{cities} — הוא יתווסף לסיכום אחרי /end_session.", f"You also have an open session in {cities} — it will be added to the summary after /end_session."))
 
     send_message(chat_id, "\n".join(lines).strip())
     send_daily_exposure_chart(chat_id, todays_sessions, target_date)
@@ -2365,7 +2632,7 @@ def handle_edit_session(chat_id: int, username: str, args: str) -> None:
             send_message(chat_id, "שעת הסיום לא יכולה להיות לפני שעת ההתחלה.")
             return
         users = select_rows("users", {"telegram_username": f"eq.{username}"})
-        skin_type = users[0]["skin_type"] if users else 1  # ראו ההסבר ב-handle_end_session
+        skin_type = session.get("skin_type") or 1  # שורות שלפני העמודה — ראו _begin_session
         patch["exposure_score"] = calculate_exposure_score(
             session["uv_index"], duration_minutes, skin_type, effective_spf
         )
@@ -2393,11 +2660,19 @@ def handle_moved_to_dashboard(chat_id: int, username: str, args: str) -> None:
     link = create_magic_link(username)
     send_message(
         chat_id,
-        "הוספה, עריכה ומחיקה של sessions עברו לאזור האישי — שם יש טופס "
-        "מסודר במקום לזכור תחביר של פקודה.\n\n"
-        f"{link}\n\n"
-        "(הקישור בתוקף ל-24 שעות. למדידה בזמן אמת אפשר להמשיך להשתמש "
-        "ב-/start_session ו-/end_session כרגיל.)",
+        L(
+            "הוספה, עריכה ומחיקה של sessions עברו לאזור האישי — שם יש טופס "
+            "מסודר במקום לזכור תחביר של פקודה.\n\n",
+            "Adding, editing and deleting sessions moved to your personal dashboard — "
+            "a proper form instead of remembering command syntax.\n\n",
+        )
+        + f"{link}\n\n"
+        + L(
+            "(הקישור בתוקף ל-24 שעות. למדידה בזמן אמת אפשר להמשיך להשתמש "
+            "ב-/start_session ו-/end_session כרגיל.)",
+            "(The link is valid for 24 hours. For live tracking, keep using "
+            "/start_session and /end_session as usual.)",
+        ),
     )
     logger.info("Redirected @%s from a moved session command to the dashboard", username)
 
@@ -2425,10 +2700,11 @@ COMMAND_HANDLERS = {
     "/edit_session": handle_moved_to_dashboard,
     "/add_session": handle_moved_to_dashboard,
     "/diagnose_skin": handle_diagnose_skin,
+    "/language": handle_language,
 }
 
 
-def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> str:
+def _build_freeform_task(user_text: str, lang: str | None = None) -> str:
     """
     בונה את ה-task שנשלח ל-Agent Loop עבור הודעת טקסט חופשית (ראו
     _handle_freeform_question).
@@ -2441,7 +2717,7 @@ def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> s
     "English?" ולא קיבל כלום. מאז שהן VALID הן מגיעות לכאן, וצריכה
     להיות להן תשובה אמיתית ולא הפניה גנרית לתפריט.
     """
-    answer_language = "בעברית" if lang == "he" else "באנגלית"
+    answer_language = "באנגלית (in English)" if (lang or get_lang()) == "en" else "בעברית"
 
     # התאריך חייב להיכנס ל-prompt במפורש (2026-09-15). בלי זה המודל
     # מחשב "אתמול" מתוך תחושת ה"עכשיו" שנצרבה באימון שלו — באג אמיתי
@@ -2526,11 +2802,10 @@ def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> s
         "חשיפה אישי לפי סוג העור וקרם ההגנה), מדווח UV ותחזית לכל מקום, "
         "ומרכז הכל ב-/dashboard.\n\n"
         "אם זו שאלה על שפה (\"English?\", \"אפשר באנגלית?\") — ענה בדיוק "
-        "את האמת הזו ואל תוסיף עליה: הבוט עובד בעברית בלבד כרגע. "
-        "**אין** הגדרת שפה, אין מתג ואין מסך הגדרות — אסור להמציא כאלה "
-        "ואסור להפנות את המשתמש ל\"הגדרות\" או לדשבורד בשביל שפה, "
-        "ואסור להבטיח שפות שהבוט לא מדבר. אפשר לומר בנימוס שתמיכה "
-        "באנגלית מתוכננת בהמשך.\n\n"
+        "את האמת הזו ואל תוסיף עליה: הבוט מדבר עברית ואנגלית, וההחלפה "
+        "היא בפקודה /language (או בכפתורי השפה בהודעת /start). "
+        "אין מסך הגדרות אחר — אסור להמציא כזה ואסור להפנות לדשבורד "
+        "בשביל שפה, ואסור להבטיח שפות אחרות מלבד שתי אלה.\n\n"
         "אם זו לא שאלה מאף אחד מהסוגים האלה (קטע טקסט לא ברור) — הסבר "
         "בקצרה מה הבוט עושה ושאפשר לשאול אותו ישירות על UV במקום מסוים.\n\n"
         f"ענה {answer_language}, קצר וברור (זו הודעת טלגרם) — בלי Markdown."
@@ -2538,7 +2813,7 @@ def _build_freeform_task(user_text: str, lang: str = i18n.DEFAULT_LANGUAGE) -> s
 
 
 def _handle_freeform_question(
-    chat_id: int, username: str, text: str, lang: str = i18n.DEFAULT_LANGUAGE
+    chat_id: int, username: str, text: str, lang: str | None = None
 ) -> None:
     """
     טקסט חופשי שעבר את הגייטקיפר כ-VALID אבל לא תואם אף פקודה מוכרת —
@@ -2607,8 +2882,12 @@ def _dispatch(handler, chat_id: int, username: str, args: str, lang: str) -> Non
         logger.exception("No UV value available for @%s", username)
         send_message(
             chat_id,
-            "לא הצלחתי לקבל את מדד ה-UV לנקודה הזו כרגע — זו תקלה בשירות "
-            "מזג האוויר, לא אצלכם. נסו שוב בעוד כמה דקות.",
+            L(
+                "לא הצלחתי לקבל את מדד ה-UV לנקודה הזו כרגע — זו תקלה בשירות "
+                "מזג האוויר, לא אצלכם. נסו שוב בעוד כמה דקות.",
+                "I couldn't get the UV index for this spot right now — that's the "
+                "weather service, not you. Try again in a few minutes.",
+            ),
         )
     except Exception:
         # מכוון רחב: עדיף הודעה גנרית על שתיקה. ה-exception ממשיך ללוג
@@ -2616,8 +2895,12 @@ def _dispatch(handler, chat_id: int, username: str, args: str, lang: str) -> Non
         logger.exception("Handler failed for @%s (args=%r)", username, args)
         send_message(
             chat_id,
-            "משהו נשבר אצלי בדרך לתשובה. נסו שוב, ואם זה חוזר — זו תקלה "
-            "אצלנו ולא אצלכם.",
+            L(
+                "משהו נשבר אצלי בדרך לתשובה. נסו שוב, ואם זה חוזר — זו תקלה "
+                "אצלנו ולא אצלכם.",
+                "Something broke on my side. Try again — if it keeps happening, "
+                "it's our fault, not yours.",
+            ),
         )
 
 
@@ -2637,13 +2920,36 @@ def handle_callback_query(callback_query: dict) -> None:
     data = callback_query.get("data") or ""
     message = callback_query.get("message") or {}
     chat_id = message.get("chat", {}).get("id")
-    username = (callback_query.get("from") or {}).get("username")
-    # ללחיצה על כפתור אין טקסט משלה, אז נגזרים מההודעה שהכפתור
-    # יושב עליה — היא נשלחה בשפה מסוימת, והתשובה צריכה להתאים לה.
-    lang = resolve_language(message.get("caption") or message.get("text"))
+    sender = callback_query.get("from") or {}
+    username = sender.get("username")
+    # לחיצה על כפתור לא מכילה טקסט של המשתמש — השפה היא השמורה.
+    lang, _ = resolve_user_language(None, _stored_language(username), sender.get("language_code"))
+    set_lang(lang)
 
     if not query_id or not chat_id or not username:
         logger.warning("Ignoring malformed callback_query: %s", callback_query)
+        return
+
+    if data.startswith(LANG_CALLBACK_PREFIX):
+        raw_lang = data[len(LANG_CALLBACK_PREFIX):]
+        from_start = raw_lang.endswith(LANG_FROM_START_SUFFIX)
+        chosen = i18n.normalize_language(raw_lang.removesuffix(LANG_FROM_START_SUFFIX))
+        answer_callback_query(query_id)
+        if chosen and from_start:
+            # נלחץ על הודעת הפתיחה: כל מה שמתחתיה (סולם, כפתורי סוג עור)
+            # נשלח בשפה הקודמת. אישור לבד השאיר את המשתמש מול onboarding
+            # בשפה שהוא הרגע אמר שהוא לא רוצה (תקלה 8.10, צילום מסך).
+            set_lang(chosen)
+            _remember_language(username, chosen)
+            handle_start(chat_id, username, "", lang=chosen)
+            logger.info("Language set to %s for @%s from /start — onboarding re-sent", chosen, username)
+            return
+        if chosen:
+            _apply_language_choice(chat_id, username, chosen)
+            # מי שלחץ על השפה בהודעת הפתיחה עוד לא בחר סוג עור —
+            # שולחים לו את השאלה שוב, הפעם בשפה שבחר.
+            if not select_rows("users", {"telegram_username": f"eq.{username}"}):
+                send_message(chat_id, t("skin_question"), reply_markup=_skin_type_keyboard())
         return
 
     if not data.startswith(SKIN_TYPE_CALLBACK_PREFIX):
@@ -2707,6 +3013,15 @@ def handle_update(update: dict) -> None:
 
     _mirror_incoming_to_admin(chat_id, username, text, photo_sizes, location)
 
+    # השפה נקבעת לפני כל נתיב — גם הנתיב המהיר של ספרה בודדת למטה כבר
+    # שולח הודעה. ראו i18n.resolve_user_language לסדר העדיפויות.
+    lang, lang_changed = resolve_user_language(
+        text, _stored_language(username), message.get("from", {}).get("language_code")
+    )
+    set_lang(lang)
+    if lang_changed and username:
+        _remember_language(username, lang)
+
     # בחירת סוג-עור "אינטראקטיבית" — ראו _pending_skin_type_pick למעלה.
     # ספרה בודדת (1-6) שמגיעה בזמן שיש דגל pending (מ-/start או מהודעת-
     # שימוש של /set_skin_type) מנותבת ישירות ל-handle_set_skin_type,
@@ -2755,10 +3070,6 @@ def handle_update(update: dict) -> None:
             if classification == "NOISE":
                 return
 
-    # עברית כברירת מחדל; אנגלית רק אם המשתמש באמת כותב אנגלית.
-    # ראו i18n.resolve_language לרציונל (ולתקלה שהובילה לזה).
-    lang = resolve_language(text)
-
     if not username:
         send_message(chat_id, t("need_username", lang))
         return
@@ -2798,9 +3109,11 @@ def handle_update(update: dict) -> None:
         command, _, args = text.partition(" ")
         handler = COMMAND_HANDLERS.get(command)
         if handler is None:
-            # לא פקודה מוכרת, אבל כבר עבר את הגייטקיפר כ-VALID (אחרת היינו
-            # חוזרים למעלה) — טקסט חופשי לגיטימי-כנראה, מנותב ל-Agent Loop
-            # במקום להיעלם בשקט (ראו _handle_freeform_question).
+            # "English?" / "עברית" / "in Hebrew please" — בקשת שפה קצרה
+            # מקבלת אישור ישיר, לא תשובה מה-Agent Loop.
+            if i18n.is_language_request(text):
+                _apply_language_choice(chat_id, username, lang)
+                return
             _handle_freeform_question(chat_id, username, text, lang)
             return
 

@@ -247,7 +247,7 @@ check("the spinner is cleared for the photo button too", len(answered) == 1)
 # הצעה מתמונה -> כפתורי אישור
 messages.clear()
 with patch.object(bc, "download_telegram_photo", lambda client, fid: b"img"), \
-     patch.object(bc, "classify_skin_type_from_image", lambda b: {"skin_type": 3, "confidence": "medium", "reasoning": "גוון בינוני"}), \
+     patch.object(bc, "classify_skin_type_from_image", lambda b, **_k: {"skin_type": 3, "confidence": "medium", "reasoning": "גוון בינוני"}), \
      patch.object(bc, "validate_classification", lambda raw: {"ok": True, **raw}), \
      patch.object(bc, "_notify_admin_token_usage", lambda *a: None), \
      patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))):

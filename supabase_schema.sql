@@ -46,6 +46,12 @@ create table if not exists users (
 -- הרצה חד-פעמית נוספת אם הטבלה כבר קיימת מלפני העדכון הזה:
 -- alter table users add column if not exists chat_id bigint;
 
+-- 2026-10-08: שפת הממשק לכל משתמש ('he' / 'en'). הבוט, ה-Worker של
+-- השקיעה והדשבורד קוראים אותה. לפני ה-migration הבוט עובד בעברית בלבד
+-- לכל מי שלא כותב טקסט באנגלית; ה-Worker *דורש* את העמודה — להריץ קודם.
+alter table users add column if not exists language text not null default 'he'
+    check (language in ('he', 'en'));
+
 create table if not exists exposure_log (
     id                bigint generated always as identity primary key,
     created_at        timestamptz not null default now(),

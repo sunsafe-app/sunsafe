@@ -58,6 +58,8 @@ interface SessionRow {
   lat: number | null;
   lon: number | null;
   spf: number | null;
+  /** סוג העור שנשמר בפתיחת ה-session (bot_commands._begin_session). null בשורות ישנות. */
+  skin_type?: number | null;
 }
 
 const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
@@ -196,16 +198,18 @@ async function closeSession(env: Env, session: SessionRow, now: Date): Promise<b
   );
   if (stillOpen.length === 0) return false;
 
-  const users = await selectRows<{ chat_id: number | null; skin_type: number | null }>(
+  // language נוספה 2026-10-08 (supabase/migrations/20261008_users_language.sql).
+  // ה-migration חייב לרוץ לפני הפריסה — PostgREST מחזיר 400 על עמודה לא קיימת.
+  const users = await selectRows<{ chat_id: number | null; language?: string | null }>(
     env,
-    `users?telegram_username=eq.${encodeURIComponent(username)}&select=chat_id,skin_type`,
+    `users?telegram_username=eq.${encodeURIComponent(username)}&select=chat_id,language`,
   );
   const chatId = users[0]?.chat_id ?? null;
-  // 1 ולא 3 (שונה 16.9.2026) — סוג עור 1 נותן את תקציב הזמן הקצר
-  // ביותר, וזו ההנחה הנכונה כשאין שורת users. אותו שינוי בוצע ב-
-  // handle_end_session בפייתון; שני המימושים חייבים להסכים, אחרת
-  // session שנסגר אוטומטית יקבל ציון שונה מאחד שנסגר ידנית.
-  const skinType = users[0]?.skin_type ?? 1;
+  // סוג העור של ה-session עצמו, לא של users (2026-10-08) — בדיוק כמו
+  // handle_end_session בפייתון. שני המימושים חייבים להסכים, אחרת session
+  // שנסגר אוטומטית יקבל ציון שונה מאחד שנסגר ידנית. 1 לשורות ישנות:
+  // סוג עור 1 נותן את תקציב הזמן הקצר ביותר (שונה מ-3 ב-16.9.2026).
+  const skinType = session.skin_type || 1;
 
   const start = new Date(session.start_time);
   const durationMinutes = (now.getTime() - start.getTime()) / 60000;
@@ -261,7 +265,7 @@ async function closeSession(env: Env, session: SessionRow, now: Date): Promise<b
 
     await sendTelegram(env, chatId, buildCompletionMessage({
       durationMinutes, city: session.city, score, uvIndex, uvIsAverage, skinType,
-      spf: session.spf, daily,
+      spf: session.spf, daily, lang: users[0]?.language,
     }));
   } else {
     console.warn(`session ${id}: no chat_id for @${username} — closed without notifying`);
@@ -275,7 +279,7 @@ async function closeSession(env: Env, session: SessionRow, now: Date): Promise<b
 export async function runSweep(env: Env, now: Date = new Date()): Promise<{ closed: number; seen: number }> {
   const open = await selectRows<SessionRow>(
     env,
-    "exposure_log?end_time=is.null&select=id,telegram_username,city,start_time,uv_index,lat,lon,spf",
+    "exposure_log?end_time=is.null&select=id,telegram_username,city,start_time,uv_index,lat,lon,spf,skin_type",
   );
 
   let closed = 0;

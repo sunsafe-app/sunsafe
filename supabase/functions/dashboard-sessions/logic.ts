@@ -233,6 +233,8 @@ export interface RequestBody {
   /** id של שורה ב-exposure_log — נדרש ל-update/delete בלבד. */
   id?: number;
   session?: SessionPayload;
+  /** שפת התצוגה של הדשבורד ("he"/"en") — להודעות שגיאה ולשמות ערים. */
+  lang?: string;
 }
 
 /** ולידציה זולה של גוף הבקשה, לפני כל I/O (DB/geocoding/Open-Meteo). */
@@ -386,4 +388,34 @@ export function utcIsoToLocalWallClock(
     date: `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`,
     time: `${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`,
   };
+}
+
+// -----------------------------------------------------------------------
+// אנגלית (2026-10-08)
+// -----------------------------------------------------------------------
+// ההודעות למעלה נשארות בעברית ככתבן (הבדיקות נועלות אותן), ומתורגמות
+// רק בנקודת היציאה מ-index.ts. מפתח = הנוסח העברי המדויק; הודעה שאין לה
+// תרגום יוצאת כמו שהיא — עדיף עברית מאשר כלום.
+const MESSAGES_EN: Record<string, string> = {
+  "התאריך או השעות לא תקינים": "The date or times are invalid",
+  "שעת הסיום חייבת להיות אחרי שעת ההתחלה": "The end time must be after the start time",
+  "session ארוך מדי (מעל 24 שעות) — כנראה טעות בנתונים":
+    "Session too long (over 24 hours) — probably a data entry mistake",
+  "שעת הסיום לא יכולה להיות בעתיד": "The end time can't be in the future",
+  "אפשר לרשום רק sessions מ-92 הימים האחרונים (זה הטווח שבו יש נתוני UV היסטוריים)":
+    "You can only log sessions from the last 92 days (the range with historical UV data)",
+  "שעת ההתחלה שהזנתם היא בעתיד. בדקו את התאריך, ואם בוחר השעה שלכם מציג AM/PM — שגם זה נבחר נכון.":
+    "The start time you entered is in the future. Check the date, and if your time picker shows AM/PM, check that too.",
+  "שעת הסיום מוקדמת משעת ההתחלה. אם ה-session לא חצה חצות, בדקו את AM/PM בשתי השעות.":
+    "The end time is earlier than the start time. If the session didn't cross midnight, check AM/PM on both times.",
+};
+
+export type Lang = "he" | "en";
+
+export function normalizeLang(lang: unknown): Lang {
+  return lang === "en" ? "en" : "he";
+}
+
+export function localizeMessage(message: string, lang: unknown): string {
+  return normalizeLang(lang) === "en" ? (MESSAGES_EN[message] ?? message) : message;
 }

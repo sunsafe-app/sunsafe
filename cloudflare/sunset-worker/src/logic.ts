@@ -150,10 +150,24 @@ export function dailySummaryHe(
   _peakCity?: string | null,
   _peakScore?: number | null,
 ): string {
-  return [
-    `${exposureBar(dayScore)}  ${dayScore}%`,
-    `היום: ${pythonRound(totalMinutes)} דקות בשמש`,
-  ].join("\n");
+  return dailySummary(dayScore, _sessionCount, totalMinutes, _peakCity, _peakScore, "he");
+}
+
+export type Lang = "he" | "en";
+
+/** daily_summary בפייתון, בשתי השפות (2026-10-08). */
+export function dailySummary(
+  dayScore: number,
+  _sessionCount: number,
+  totalMinutes: number,
+  _peakCity?: string | null,
+  _peakScore?: number | null,
+  lang: Lang = "he",
+): string {
+  const minutesLine = lang === "en"
+    ? `Today: ${pythonRound(totalMinutes)} min in the sun`
+    : `היום: ${pythonRound(totalMinutes)} דקות בשמש`;
+  return [`${exposureBar(dayScore)}  ${dayScore}%`, minutesLine].join("\n");
 }
 
 export function buildCompletionMessage(params: {
@@ -173,19 +187,30 @@ export function buildCompletionMessage(params: {
     peakCity?: string | null;
     peakScore?: number | null;
   } | null;
+  /** users.language. כל ערך אחר (null, עמודה חסרה) -> עברית. */
+  lang?: string | null;
 }): string {
   const { durationMinutes, city, daily } = params;
+  const lang: Lang = params.lang === "en" ? "en" : "he";
 
   // שורת "מדד חשיפה: X% — Y מתוך Z" הוסרה ב-16.9.2026 (ראו ההערה
   // ב-handle_end_session בפייתון). score/uvIndex/uvIsAverage/skinType/spf
   // נשארים בחתימה כי ה-fixture מעביר אותם וה-score נכתב ל-DB — הם פשוט
   // לא מוצגים בהודעה.
   const dailyPart = daily
-    ? "\n" + dailySummaryHe(
-        daily.score, daily.sessionCount, daily.totalMinutes, daily.peakCity, daily.peakScore,
+    ? "\n" + dailySummary(
+        daily.score, daily.sessionCount, daily.totalMinutes, daily.peakCity, daily.peakScore, lang,
       )
     : "";
 
+  if (lang === "en") {
+    return (
+      `${pythonRound(durationMinutes)} min in ${city}.` +
+      `${dailyPart}\n` +
+      "To see it in your personal dashboard, tap\n" +
+      "/dashboard"
+    );
+  }
   return (
     `${pythonRound(durationMinutes)} דקות ב${city}.` +
     `${dailyPart}\n` +

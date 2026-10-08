@@ -9,41 +9,70 @@ SunSafe — מחרוזות דו-לשוניות (עברית / אנגלית)
 מספר מצומצם של מחרוזות, והתלות הנוספת (gettext/קבצי .po) הייתה עולה
 יותר ממה שהיא חוסכת.
 
-**מצב נוכחי: אנגלית כבויה** (ENGLISH_ENABLED למטה) — הבוט עונה עברית
-תמיד. הקובץ הזה נשאר במקומו עם התרגומים המלאים, מוכן להפעלה מחדש.
+**מצב נוכחי (2026-10-08): אנגלית דולקת.** לכל משתמש שפה שמורה
+(users.language), והבוט עונה בה בכל הודעה — גם בפקודות בלי אותיות
+כמו "/end_session 30", שאין בהן שום סימן שפה.
 
-כלל השפה כשהמתג יידלק: עונים בשפה ש*נכתבה בהודעה עצמה*, ועברית
-כברירת מחדל. ה-language_code של לקוח הטלגרם לא משמש — הגרסה הראשונה
-נשענה עליו ונכשלה מיידית (ראו resolve_language).
+איך נקבעת השפה (resolve_language):
+1. בחירה מפורשת — כפתור 🇬🇧/🇮🇱 בהודעת הפתיחה, או /language.
+2. החלפה אוטומטית כשהמשתמש *כותב טקסט* בשפה השנייה (לא פקודה —
+   "/start_session Haifa" הוא שם עיר, לא בחירת שפה). ראו
+   detect_language_switch.
+3. אחרת — השפה השמורה.
+4. משתמש חדש בלי שפה שמורה: language_code של לקוח הטלגרם, *רק* כנקודת
+   פתיחה (he -> עברית, כל השאר -> אנגלית). זה המקום היחיד שבו הוא
+   משמש, והוא לא גובר על שום דבר שהמשתמש כתב או בחר — ראו התקלה
+   מ-14.9 ב-resolve_language.
 
-הערה על ההיקף: כאן יושבות מחרוזות מסלול ה-onboarding בלבד — המסלול
-שכל משתמש חדש עובר. שאר הפקודות, הדשבורד וה-Edge Functions לא
-תורגמו. כשנחזור לזה, שם יידרשו גם עמודת language ב-users, בשביל
-ההודעות שהבוט *יוזם* בעצמו (סגירת session אחרי שקיעה) ואין להן הודעה
-נכנסת לקרוא ממנה שפה.
+השפה של העדכון הנוכחי נשמרת ב-contextvar (set_lang / get_lang), כך
+ש-t() ו-L() יודעות אותה בלי להעביר lang דרך כל פונקציה.
+
+מחרוזות: STRINGS למטה למסלול ה-onboarding (המקור, עם בדיקת שלמות),
+ו-L(he, en) לכל השאר — שתי השפות זו לצד זו בנקודת השימוש. ~100
+מחרוזות חד-פעמיות לא מצדיקות מפתח בטבלה מרוחקת כל אחת.
 """
 
 DEFAULT_LANGUAGE = "he"
 SUPPORTED_LANGUAGES = ("he", "en")
 
 # ---------------------------------------------------------------------
-# מתג התמיכה באנגלית — כבוי (2026-09-14)
+# מתג התמיכה באנגלית
 # ---------------------------------------------------------------------
-# התמיכה באנגלית נבנתה, הופעלה, ונכבתה באותו יום לבקשת המשתמש ("נחזור
-# לזה מאוחר יותר"). היא לא נמחקה: טבלת המחרוזות למטה מלאה ותקינה בשתי
-# השפות, הבדיקות ממשיכות לאכוף את שלמותה, וכל נתיבי ה-lang בקוד
-# נשארו במקומם.
-#
-# **להפעלה מחדש**: להחזיר כאן True, ולהחזיר ב-set_bot_profile.py את
-# רישום הפרופיל והתפריט באנגלית (ראו ההערה שם — כרגע הוא לא רק לא
-# רושם אנגלית, אלא גם *מוחק* רישום קודם).
-#
-# כל עוד זה False, resolve_language מחזירה עברית תמיד, ללא קשר למה
-# שנכתב — כך שאין מצב ביניים שבו חלק מההודעות באנגלית וחלק בעברית.
-ENGLISH_ENABLED = False
+# נבנתה ונכבתה ב-2026-09-14, הודלקה מחדש ב-2026-10-08 יחד עם שפה
+# שמורה לכל משתמש. כיבוי (False) מחזיר עברית תמיד, ללא קשר לשום דבר.
+ENGLISH_ENABLED = True
 
 
+import contextvars
 import re
+
+_current_lang: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "sunsafe_lang", default=DEFAULT_LANGUAGE
+)
+
+
+def normalize_language(lang: str | None) -> str | None:
+    """'en', 'EN', 'en-US' -> 'en'. כל דבר שלא נתמך -> None."""
+    if not lang:
+        return None
+    code = str(lang).strip().lower()[:2]
+    return code if code in SUPPORTED_LANGUAGES else None
+
+
+def set_lang(lang: str | None) -> None:
+    """קובעת את שפת העדכון הנוכחי (ל-thread/context הנוכחי)."""
+    _current_lang.set(
+        (normalize_language(lang) or DEFAULT_LANGUAGE) if ENGLISH_ENABLED else DEFAULT_LANGUAGE
+    )
+
+
+def get_lang() -> str:
+    return _current_lang.get()
+
+
+def L(he: str, en: str) -> str:
+    """המחרוזת בשפה של העדכון הנוכחי."""
+    return en if get_lang() == "en" else he
 
 # טווח היוניקוד של האלפבית העברי.
 _HEBREW_RE = re.compile(r"[֐-׿]")
@@ -72,6 +101,75 @@ def detect_language_from_text(text: str | None) -> str | None:
         return "en"
     # בלי אותיות בכלל (מספרים, אמוג'י, "14:30") — אין כאן שום מידע על שפה.
     return None
+
+
+# מילים שמבקשות שפה במפורש — מספיקות לבדן, גם בהודעה של מילה אחת.
+_EXPLICIT_EN = re.compile(r"\b(english|in english|inglish)\b|אנגלית", re.I)
+_EXPLICIT_HE = re.compile(r"\bhebrew\b|עברית|\bivrit\b", re.I)
+# כמה מילים לטיניות צריך כדי להחליף לאנגלית. שם עיר ("Tel Aviv",
+# "San Jose") הוא עד שתי מילים ולא אומר כלום על השפה; משפט — כן.
+_MIN_ENGLISH_WORDS = 3
+
+
+def detect_language_switch(text: str | None) -> str | None:
+    """
+    האם ההודעה הזו היא סיבה *להחליף* את השפה השמורה. שמרנית בכוונה:
+    החלפה שגויה עולה יותר מהחמצה (המשתמש יכול תמיד /language).
+
+    - פקודות לא מחליפות שפה בכלל — הארגומנטים שלהן הם שמות ערים ומספרים.
+    - בקשה מפורשת ("English?", "עברית", "in Hebrew please") -> השפה המבוקשת.
+      נבדקת *לפני* הכתב: "שנה שפה לאנגלית" כתוב בעברית אבל מבקש אנגלית.
+    - כל אות עברית -> עברית (דובר עברית לא כותב עברית בטעות).
+    - לפחות שלוש מילים לטיניות -> אנגלית.
+    """
+    if not text:
+        return None
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        return None
+    if _EXPLICIT_EN.search(stripped) and not _EXPLICIT_HE.search(stripped):
+        return "en"
+    if _EXPLICIT_HE.search(stripped) and not _EXPLICIT_EN.search(stripped):
+        return "he"
+    if _HEBREW_RE.search(stripped):
+        return "he"
+    latin_words = re.findall(r"[A-Za-z]{2,}", stripped)
+    if len(latin_words) >= _MIN_ENGLISH_WORDS:
+        return "en"
+    return None
+
+
+def is_language_request(text: str | None) -> bool:
+    """הודעה קצרה (עד 4 מילים) שכל עניינה בקשת שפה: "English?", "עברית בבקשה"."""
+    if not text or text.strip().startswith("/"):
+        return False
+    if len(text.split()) > 4:
+        return False
+    return bool(_EXPLICIT_EN.search(text) or _EXPLICIT_HE.search(text))
+
+
+def resolve_user_language(
+    text: str | None,
+    stored: str | None,
+    client_language_code: str | None = None,
+) -> tuple[str, bool]:
+    """
+    השפה לעדכון הזה, ו-True אם היא שונה מהשמורה (כלומר צריך לשמור).
+
+    סדר עדיפויות: מה שנכתב עכשיו > מה שנשמר > language_code של הלקוח
+    (רק למשתמש חדש) > עברית.
+    """
+    if not ENGLISH_ENABLED:
+        return DEFAULT_LANGUAGE, False
+    stored = normalize_language(stored)
+    switched = detect_language_switch(text)
+    if switched:
+        return switched, switched != stored
+    if stored:
+        return stored, False
+    client = (client_language_code or "").lower()
+    guess = "he" if client.startswith("he") or client.startswith("iw") else ("en" if client else DEFAULT_LANGUAGE)
+    return guess, True
 
 
 def resolve_language(text: str | None = None) -> str:
@@ -132,7 +230,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "/offline_session — לתעד חשיפה בדיעבד, בלי קליטה.\n"
             "/diagnose_skin — בדיקת סימני כוויה מתצלום.\n"
             "/set_skin_type <1-6> — לעדכן סוג עור.\n"
-            "/start — להתחיל מחדש ולבחור סוג עור.\n\n"
+            "/start — להתחיל מחדש ולבחור סוג עור.\n"
+            "/language — English / עברית\n\n"
             "ואפשר גם פשוט לשאול: \"מה ה-UV בתל אביב?\", "
             "\"מה היה ה-UV במצפה רמון אתמול?\"\n\n"
             "לבחירת קרם הגנה ספציפי — במיוחד אם יש רגישות או מצב עור — "
@@ -150,7 +249,8 @@ STRINGS: dict[str, dict[str, str]] = {
             "/offline_session — log exposure after the fact, with no signal.\n"
             "/diagnose_skin — check a photo for burn signs.\n"
             "/set_skin_type <1-6> — update your skin type.\n"
-            "/start — start over and pick a skin type.\n\n"
+            "/start — start over and pick a skin type.\n"
+            "/language — switch language\n\n"
             "You can also just ask: \"What's the UV in Tel Aviv?\"\n\n"
             "For choosing a specific sunscreen — especially with a skin condition "
             "or sensitivity — ask a pharmacist or a dermatologist. I give a "
@@ -298,7 +398,7 @@ STRINGS: dict[str, dict[str, str]] = {
 }
 
 
-def t(key: str, lang: str = DEFAULT_LANGUAGE, **kwargs) -> str:
+def t(key: str, lang: str | None = None, **kwargs) -> str:
     """
     מחזירה את המחרוזת במפתח `key` בשפה `lang`, עם החלפת פרמטרים.
 
@@ -307,11 +407,11 @@ def t(key: str, lang: str = DEFAULT_LANGUAGE, **kwargs) -> str:
     הרבה לפני פרודקשן.
     """
     entry = STRINGS[key]
-    template = entry.get(lang) or entry[DEFAULT_LANGUAGE]
+    template = entry.get(lang or get_lang()) or entry[DEFAULT_LANGUAGE]
     return template.format(**kwargs) if kwargs else template
 
 
-def skin_type_label(skin_type: int, lang: str = DEFAULT_LANGUAGE) -> str:
+def skin_type_label(skin_type: int, lang: str | None = None) -> str:
     """תווית סוג עור ("3 · בינוני" / "3 · Medium"), עם נפילה למספר גולמי."""
     key = f"skin_{skin_type}"
     return t(key, lang) if key in STRINGS else str(skin_type)

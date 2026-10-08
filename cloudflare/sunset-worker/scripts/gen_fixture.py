@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 
 from geo_uv_core import (  # noqa: E402
     calculate_exposure_score,
-    daily_summary_he,
+    daily_summary,
     exposure_bar,
     safe_exposure_minutes,
 )
@@ -57,11 +57,12 @@ for day_score, count, minutes, peak_city, peak_score in (
     (0, 1, 0, "טוקיו", 0),
     (47, 2, 55, None, None),
 ):
-    DAILY_BLOCKS.append({
-        "dayScore": day_score, "sessionCount": count, "totalMinutes": minutes,
-        "peakCity": peak_city, "peakScore": peak_score,
-        "text": daily_summary_he(day_score, count, minutes, peak_city, peak_score),
-    })
+    for lang in ("he", "en"):
+        DAILY_BLOCKS.append({
+            "dayScore": day_score, "sessionCount": count, "totalMinutes": minutes,
+            "peakCity": peak_city, "peakScore": peak_score, "lang": lang,
+            "text": daily_summary(day_score, count, minutes, peak_city, peak_score, lang),
+        })
 
 # הודעות סיום מלאות — הנוסח המדויק שהבוט שולח.
 MESSAGES = []
@@ -74,17 +75,25 @@ for city, duration, uv, skin, spf, is_avg, daily in (
     score = calculate_exposure_score(uv, duration, skin, spf)
     # שורת התקציב הוסרה מההודעה ב-16.9.2026 — score עוד נכתב ל-DB
     # ונשאר ב-fixture, אבל אינו מוצג.
-    daily_part = "\n" + daily_summary_he(*daily) if daily else ""
-    MESSAGES.append({
-        "city": city, "durationMinutes": duration, "uvIndex": uv,
-        "skinType": skin, "spf": spf, "uvIsAverage": is_avg,
-        "daily": None if daily is None else {
-            "score": daily[0], "sessionCount": daily[1], "totalMinutes": daily[2],
-            "peakCity": daily[3], "peakScore": daily[4],
-        },
-        "text": f"{round(duration)} דקות ב{city}.{daily_part}\n"
-                "כדי לראות את הנתונים באזור האישי — לחצו\n/dashboard",
-    })
+    # הנוסח זהה ל-handle_end_session (שני ענפי ה-L() שם).
+    for lang in ("he", "en"):
+        daily_part = "\n" + daily_summary(*daily, lang) if daily else ""
+        text = (
+            f"{round(duration)} min in {city}.{daily_part}\n"
+            "To see it in your personal dashboard, tap\n/dashboard"
+            if lang == "en" else
+            f"{round(duration)} דקות ב{city}.{daily_part}\n"
+            "כדי לראות את הנתונים באזור האישי — לחצו\n/dashboard"
+        )
+        MESSAGES.append({
+            "city": city, "durationMinutes": duration, "uvIndex": uv,
+            "skinType": skin, "spf": spf, "uvIsAverage": is_avg, "lang": lang,
+            "daily": None if daily is None else {
+                "score": daily[0], "sessionCount": daily[1], "totalMinutes": daily[2],
+                "peakCity": daily[3], "peakScore": daily[4],
+            },
+            "text": text,
+        })
 
 out = pathlib.Path(__file__).resolve().parent.parent / "src" / "fixture.json"
 out.write_text(json.dumps(

@@ -270,7 +270,7 @@
 
   table.sessions { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   table.sessions th {
-    text-align: right; font-weight: 600; color: var(--text-muted);
+    text-align: start; font-weight: 600; color: var(--text-muted);
     font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em;
     padding: 0 8px 8px; border-bottom: 1px solid var(--gridline);
   }
@@ -438,11 +438,12 @@
     font-size: 11.5px; padding: 6px 9px; border-radius: 6px;
     white-space: nowrap; opacity: 0; pointer-events: none;
     transform: translateY(4px); transition: opacity .12s, transform .12s;
-    right: 0; transform-origin: bottom right; z-index: 2;
+    inset-inline-start: 0; transform-origin: bottom right; z-index: 2;
   }
+  [dir="ltr"] .tooltip { transform-origin: bottom left; }
   .hbar-row:hover .tooltip { opacity: 1; transform: translate(0,0); }
   .tooltip::after {
-    content: ""; position: absolute; top: 100%; right: 12px;
+    content: ""; position: absolute; top: 100%; inset-inline-start: 12px;
     border: 4px solid transparent; border-top-color: var(--text-primary);
   }
 
@@ -489,7 +490,31 @@
     table.sessions { font-size: 12px; }
     table.sessions th:nth-child(2), table.sessions td:nth-child(2) { display: none; }
   }
+  /* כפתור השפה (2026-10-08) — באותו גובה כמו מתג סולם הצבעים לידו. */
+  .lang-toggle {
+    margin-inline-start: 6px; font: inherit; font-size: 12px; font-weight: 600;
+    padding: 5px 10px; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--gridline); background: transparent; color: var(--text-muted);
+  }
+  .lang-toggle:hover { color: var(--text-primary); }
 </style>
+<script>
+  // לפני הרינדור, כדי שלא יהיה הבהוב של RTL לפני מעבר ל-LTR.
+  // סדר: ?lang= בקישור (מהבוט, לפי users.language) > בחירה קודמת בדפדפן > עברית.
+  (function () {
+    var p = new URLSearchParams(location.search).get("lang");
+    var lang = p === "en" || p === "he" ? p : null;
+    try {
+      if (lang) localStorage.setItem("sunsafe:lang", lang);
+      else lang = localStorage.getItem("sunsafe:lang");
+    } catch (e) { /* בלי אחסון — פשוט לפי הקישור */ }
+    window.SUNSAFE_LANG = lang === "en" ? "en" : "he";
+    if (window.SUNSAFE_LANG === "en") {
+      document.documentElement.lang = "en";
+      document.documentElement.dir = "ltr";
+    }
+  })();
+</script>
 </head>
 <body>
 
@@ -534,6 +559,8 @@
           <path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"></path>
         </svg>
       </button>
+      <!-- הטקסט נקבע ב-JS: תמיד בשם השפה *האחרת*, בשפה שלה. -->
+      <button type="button" id="lang-toggle" class="lang-toggle"></button>
     </div>
 
   </div>
@@ -692,6 +719,79 @@
   // משתמש בכלל — הטוקן עצמו הוא מנגנון האימות (ראו
   // docs/2026-08-25-magic-link-edge-function-design.md).
   // ---------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // שפה (2026-10-08). LANG נקבע בסקריפט הקטן ב-<head>.
+  // ---------------------------------------------------------------------
+  const LANG = window.SUNSAFE_LANG === "en" ? "en" : "he";
+  const L = (he, en) => (LANG === "en" ? en : he);
+
+  // הטקסט הסטטי ב-HTML נשאר בעברית (המקור), ומוחלף כאן לפי התאמה מדויקת.
+  // טקסט שנשכח כאן פשוט יישאר בעברית — לא יישבר כלום.
+  const STATIC_EN = {
+    "מד חשיפה לשמש חכם": "Smart sun exposure tracker",
+    "➕ הוספת session ראשון": "➕ Add your first session",
+    "סולם צבעים מותאם לעיוורון צבעים": "Colour-blind friendly palette",
+    "ניתוח נתונים —": "Analysis —",
+    "מבוסס על סוג עור, UV Index וקרם הגנה בכל session": "Based on skin type, UV index and sunscreen in each session",
+    "💡 המלצה": "💡 Recommendation",
+    "בחרו תאריך כדי לראות את השהיות בשמש שנרשמו באותו יום": "Pick a date to see the time in the sun logged that day",
+    "רישום ידני של session שכבר הסתיים": "Manually log a session that already ended",
+    "הוספת session": "Add session",
+    "מוריד את כל ה-Sessions של המשתמש, כולל מדד החשיפה, לקובץ Excel": "Downloads all your sessions, including the exposure score, to an Excel file",
+    "הורדת נתונים ל-Excel": "Download to Excel",
+    "תאריך": "Date",
+    "מיקום": "Location",
+    "שעת התחלה": "Start time",
+    "שעת סיום": "End time",
+    "משך": "Duration",
+    "קרם הגנה": "Sunscreen",
+    "ניתוח חודשי —": "Monthly analysis —",
+    "מגמת חשיפה מצטברת לאורך החודש (סכום מדדי החשיפה היומיים, יום אחר יום)": "Cumulative exposure across the month (sum of daily exposure scores, day by day)",
+    "💡 סיכום החודש": "💡 Month summary",
+    "SunSafe · האזור האישי שלך — הקישור בתוקף ל-24 שעות מרגע היצירה": "SunSafe · your personal dashboard — the link is valid for 24 hours from creation",
+    "רישום של שהייה בשמש שכבר הסתיימה. ה-UV ומדד החשיפה מחושבים אוטומטית בשרת.": "Log time in the sun that already ended. UV and the exposure score are calculated on the server.",
+    "עיר": "City",
+    "תל אביב": "Tel Aviv",
+    "אפשר גם עיר עם מדינה, למשל \"סן חוסה קוסטה ריקה\"": "You can add the country too, e.g. \"San Jose Costa Rica\"",
+    "השעות נקראות לפי השעון המקומי של העיר שבחרתם, לא לפי שעון המכשיר שלכם.": "Times are read in the city's local time, not your device's time.",
+    "SPF (אופציונלי)": "SPF (optional)",
+    "למשל 30": "e.g. 30",
+    "להשאיר ריק אם לא נעשה שימוש בקרם הגנה": "Leave empty if no sunscreen was used",
+    "שמירה": "Save",
+    "ביטול": "Cancel",
+    "מחיקת session": "Delete session",
+    "הפעולה הזו לא ניתנת לביטול.": "This can't be undone.",
+    "מחיקה": "Delete",
+  };
+
+  function translateStatic() {
+    if (LANG !== "en") return;
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach((node) => {
+      const key = node.nodeValue.trim();
+      if (key && STATIC_EN[key]) node.nodeValue = node.nodeValue.replace(key, STATIC_EN[key]);
+    });
+    document.querySelectorAll("[title],[aria-label],[placeholder]").forEach((el) => {
+      ["title", "aria-label", "placeholder"].forEach((attr) => {
+        const v = el.getAttribute(attr);
+        if (v && STATIC_EN[v.trim()]) el.setAttribute(attr, STATIC_EN[v.trim()]);
+      });
+    });
+  }
+
+  translateStatic();
+
+  const langToggle = document.getElementById("lang-toggle");
+  langToggle.textContent = LANG === "en" ? "עברית" : "English";
+  langToggle.setAttribute("aria-label", LANG === "en" ? "החלפה לעברית" : "Switch to English");
+  langToggle.addEventListener("click", () => {
+    const url = new URL(location.href);
+    url.searchParams.set("lang", LANG === "en" ? "he" : "en");
+    location.replace(url.toString());
+  });
+
   const DASHBOARD_FUNCTION_URL =
     "https://wccueensecchmqfwdecw.supabase.co/functions/v1/dashboard-data";
 
@@ -706,14 +806,25 @@
   const SKIN_TYPE_FACTOR = { 1: 0.5, 2: 0.75, 3: 1.0, 4: 1.5, 5: 2.5, 6: 4.0 };
 
   const STATUS = {
-    good:     { color: "var(--status-good)",     label: "נמוך" },
-    warning:  { color: "var(--status-warning)",  label: "בינוני" },
-    serious:  { color: "var(--status-serious)",  label: "בינוני-גבוה" },
-    critical: { color: "var(--status-critical)", label: "גבוה / חריגה" },
+    good:     { color: "var(--status-good)",     label: L("נמוך", "Low") },
+    warning:  { color: "var(--status-warning)",  label: L("בינוני", "Moderate") },
+    serious:  { color: "var(--status-serious)",  label: L("בינוני-גבוה", "Moderate-high") },
+    critical: { color: "var(--status-critical)", label: L("גבוה / חריגה", "High / over limit") },
   };
 
-  // הודעות שגיאה בעברית לפי error code — ראו טבלת השגיאות במסמך העיצוב.
-  const ERROR_MESSAGES = {
+  // הודעות שגיאה לפי error code — ראו טבלת השגיאות במסמך העיצוב.
+  const ERROR_MESSAGES = LANG === "en" ? {
+    missing_token: "No token in the link. Send /dashboard to the bot to get a new link.",
+    invalid_token: "This link isn't valid. Send /dashboard to the bot to get a new link.",
+    expired_token: "This link has expired (valid for 24 hours only). Send /dashboard to the bot to get a new link.",
+    server_error: "Something went wrong loading your data. Try again in a moment.",
+    not_onboarded: "You haven't set a skin type yet. Send /start to the bot first.",
+    city_not_found: "We couldn't find that city. Try another spelling, or add the country (e.g. \"San Jose Costa Rica\").",
+    uv_unavailable: "No historical UV data for that date (the supported range is the last 92 days).",
+    session_not_found: "This session no longer exists. Refresh the page.",
+    invalid_session: "Something in the details isn't valid. Check the city, date and times.",
+    invalid_body: "Invalid request. Refresh the page and try again.",
+  } : {
     missing_token: "לא נמצא טוקן בקישור. שלחו /dashboard לבוט כדי לקבל קישור חדש.",
     invalid_token: "הקישור הזה לא תקין. שלחו /dashboard לבוט כדי לקבל קישור חדש.",
     expired_token: "פג תוקף הקישור (בתוקף ל-24 שעות בלבד). שלחו /dashboard לבוט כדי לקבל קישור חדש.",
@@ -737,7 +848,10 @@
   // ה-session שממתין לאישור מחיקה.
   let pendingDelete = null;
 
-  const HEBREW_MONTHS = [
+  const HEBREW_MONTHS = LANG === "en" ? [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ] : [
     "ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
     "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר",
   ];
@@ -824,18 +938,21 @@
   async function loadDashboard() {
     const token = new URLSearchParams(window.location.search).get("token");
     if (!token) {
-      showStatus("🔗", "אין טוקן", ERROR_MESSAGES.missing_token);
+      showStatus("🔗", L("אין טוקן", "No token"), ERROR_MESSAGES.missing_token);
       return;
     }
 
-    showStatus("⏳", "טוען...", "רגע, שולפים את הנתונים שלך...");
+    showStatus("⏳", L("טוען...", "Loading..."), L("רגע, שולפים את הנתונים שלך...", "One moment, fetching your data..."));
     document.getElementById("status-emoji").innerHTML = '<div class="status-spinner"></div>';
 
     let response;
     try {
       response = await fetch(`${DASHBOARD_FUNCTION_URL}?token=${encodeURIComponent(token)}`);
     } catch (err) {
-      showStatus("⚠️", "שגיאת רשת", "לא הצלחנו להתחבר לשרת. בדקו את החיבור לאינטרנט ונסו לרענן.");
+      showStatus("⚠️", L("שגיאת רשת", "Network error"), L(
+        "לא הצלחנו להתחבר לשרת. בדקו את החיבור לאינטרנט ונסו לרענן.",
+        "We couldn't reach the server. Check your internet connection and refresh.",
+      ));
       return;
     }
 
@@ -843,21 +960,24 @@
     try {
       body = await response.json();
     } catch (err) {
-      showStatus("⚠️", "שגיאה", "תשובה לא תקינה מהשרת.");
+      showStatus("⚠️", L("שגיאה", "Error"), L("תשובה לא תקינה מהשרת.", "Invalid response from the server."));
       return;
     }
 
     if (!response.ok) {
-      const message = ERROR_MESSAGES[body && body.error] || "אירעה שגיאה לא צפויה.";
-      showStatus("⚠️", "שגיאה", message);
+      const message = ERROR_MESSAGES[body && body.error] || L("אירעה שגיאה לא צפויה.", "An unexpected error occurred.");
+      showStatus("⚠️", L("שגיאה", "Error"), message);
       return;
     }
 
     if (!body.onboarded) {
       showStatus(
         "👋",
-        "עוד לא הגדרת סוג עור",
-        "שלחו /start לבוט כדי להתחיל (זה גם יעזור לכם להגדיר סוג עור), ואז רעננו את הדף הזה."
+        L("עוד לא הגדרת סוג עור", "No skin type yet"),
+        L(
+          "שלחו /start לבוט כדי להתחיל (זה גם יעזור לכם להגדיר סוג עור), ואז רעננו את הדף הזה.",
+          "Send /start to the bot to get going (it'll help you set your skin type), then refresh this page.",
+        )
       );
       return;
     }
@@ -871,8 +991,11 @@
       currentToken = token;
       showStatus(
         "📋",
-        "עדיין אין נתונים",
-        "לא נמצאו Sessions סגורים. אפשר לרשום כאן session שכבר היה, או לשלוח /start_session לבוט כדי למדוד חשיפה בזמן אמת."
+        L("עדיין אין נתונים", "No data yet"),
+        L(
+          "לא נמצאו Sessions סגורים. אפשר לרשום כאן session שכבר היה, או לשלוח /start_session לבוט כדי למדוד חשיפה בזמן אמת.",
+          "No completed sessions found. You can log a past session here, or send /start_session to the bot to track exposure live.",
+        )
       );
       document.getElementById("status-actions").style.display = "flex";
       return;
@@ -983,7 +1106,10 @@
   function exportSessionsToExcel() {
     if (!currentUser) return;
 
-    const headers = [
+    const headers = LANG === "en" ? [
+      "Date", "City", "Country", "Start time", "End time",
+      "Duration (min)", "UV Index", "SPF", "Exposure score (%)", "Level",
+    ] : [
       "תאריך", "עיר", "מדינה", "שעת התחלה", "שעת סיום",
       "משך (דק')", "UV Index", "SPF", "מדד חשיפה (%)", "רמה",
     ];
@@ -1000,7 +1126,7 @@
         s.end,
         durationMinutes(s.start, s.end),
         Number(s.uv.toFixed(1)),
-        s.spf || "לא נעשה שימוש",
+        s.spf || L("לא נעשה שימוש", "Not used"),
         score,
         STATUS[status].label,
       ];
@@ -1018,7 +1144,7 @@
         { wch: 11 }, { wch: 9 }, { wch: 14 }, { wch: 13 }, { wch: 14 },
       ];
       const wb = XLSX.utils.book_new();
-      wb.Workbook = { Views: [{ RTL: true }] };
+      wb.Workbook = { Views: [{ RTL: LANG !== "en" }] };
       XLSX.utils.book_append_sheet(wb, ws, "SunSafe Sessions");
       XLSX.writeFile(wb, `${baseName}.xlsx`);
     } else {
@@ -1075,8 +1201,11 @@
    * שהמשתמש יראה את אותו דבר בשני המקומות.
    */
   function skinTypeLabel(n) {
-    const names = ["", "בהיר מאוד", "בהיר", "בינוני", "זית", "חום", "כהה מאוד"];
-    return names[n] ? `סוג עור ${n} · ${names[n]}` : `סוג עור ${n}`;
+    const names = LANG === "en"
+      ? ["", "Very fair", "Fair", "Medium", "Olive", "Brown", "Very dark"]
+      : ["", "בהיר מאוד", "בהיר", "בינוני", "זית", "חום", "כהה מאוד"];
+    const prefix = L("סוג עור", "Skin type");
+    return names[n] ? `${prefix} ${n} · ${names[n]}` : `${prefix} ${n}`;
   }
 
   /**
@@ -1128,7 +1257,7 @@
         pill.appendChild(value);
         // הצבע הוא רמז מהיר בלבד; התווית המילולית היא מה שהופך אותו
         // לקריא — גם בהקראה וגם למי שלא מבחין בין הגוונים.
-        pill.title = `${formatDate(d)} — חשיפה ${score}%, ${STATUS[status].label}`;
+        pill.title = `${formatDate(d)} — ${L("חשיפה", "exposure")} ${score}%, ${STATUS[status].label}`;
         pill.setAttribute("aria-label", pill.title);
       }
 
@@ -1209,19 +1338,19 @@
     const statGrid = document.getElementById("month-stat-grid");
     statGrid.innerHTML = `
       <div class="stat-tile">
-        <div class="label">Sessions החודש</div>
+        <div class="label">${L("Sessions החודש", "Sessions this month")}</div>
         <div class="value">${monthSessions.length}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">זמן כולל בשמש</div>
-        <div class="value">${Math.floor(totalMinutes / 60)} שע' ${totalMinutes % 60} דק'</div>
+        <div class="label">${L("זמן כולל בשמש", "Total time in the sun")}</div>
+        <div class="value">${Math.floor(totalMinutes / 60)} ${L("שע'", "h")} ${totalMinutes % 60} ${L("דק'", "min")}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">ימי חשיפה</div>
-        <div class="value">${activeDays} מתוך ${lastDay}</div>
+        <div class="label">${L("ימי חשיפה", "Days with exposure")}</div>
+        <div class="value">${activeDays} ${L("מתוך", "of")} ${lastDay}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">חשיפה מצטברת</div>
+        <div class="label">${L("חשיפה מצטברת", "Cumulative exposure")}</div>
         <div class="value">${running}%</div>
       </div>
     `;
@@ -1231,14 +1360,18 @@
     // --- Feedback ---
     const feedbackEl = document.getElementById("month-feedback-text");
     if (monthSessions.length === 0) {
-      feedbackEl.textContent = "אין עדיין נתונים לחודש הזה.";
+      feedbackEl.textContent = L("אין עדיין נתונים לחודש הזה.", "No data for this month yet.");
     } else {
       const avgDailyScore = activeDays > 0 ? running / activeDays : 0;
       const status = scoreToStatus(Math.round(avgDailyScore));
-      feedbackEl.textContent =
+      feedbackEl.textContent = L(
         `${activeDays} מתוך ${lastDay} הימים החודש כללו חשיפה לשמש, ברמת חשיפה יומית ` +
         `ממוצעת של ${STATUS[status].label} (${Math.round(avgDailyScore)}%). ` +
-        `סך כל החשיפה המצטברת החודש: ${running}%.`;
+        `סך כל החשיפה המצטברת החודש: ${running}%.`,
+        `${activeDays} of ${lastDay} days this month included sun exposure, at an average ` +
+        `daily level of ${STATUS[status].label.toLowerCase()} (${Math.round(avgDailyScore)}%). ` +
+        `Total cumulative exposure this month: ${running}%.`,
+      );
     }
   }
 
@@ -1299,7 +1432,10 @@
         const day = dot.getAttribute("data-day");
         const cumulative = dot.getAttribute("data-cumulative");
         const dayScore = dot.getAttribute("data-dayscore");
-        tooltip.textContent = `יום ${day}: ‎+${dayScore}% היום · מצטבר ${cumulative}%`;
+        tooltip.textContent = L(
+          `יום ${day}: ‎+${dayScore}% היום · מצטבר ${cumulative}%`,
+          `Day ${day}: +${dayScore}% that day · ${cumulative}% cumulative`,
+        );
         const dotRect = dot.getBoundingClientRect();
         const wrapRect = wrap.getBoundingClientRect();
         tooltip.style.left = `${dotRect.left - wrapRect.left + dotRect.width / 2}px`;
@@ -1322,16 +1458,16 @@
         <td>${s.city}, ${s.country}</td>
         <td>${s.start}</td>
         <td>${s.end}</td>
-        <td>${dur} דק'</td>
+        <td>${dur} ${L("דק'", "min")}</td>
         <td>${s.uv.toFixed(1)}</td>
-        <td>${s.spf ? `<span class="badge-spf">SPF ${s.spf}</span>` : `<span class="badge-none">לא נעשה שימוש</span>`}</td>
+        <td>${s.spf ? `<span class="badge-spf">SPF ${s.spf}</span>` : `<span class="badge-none">${L("לא נעשה שימוש", "Not used")}</span>`}</td>
         <td class="row-actions">
-          <button class="icon-btn js-edit" title="עריכה" aria-label="עריכת session">
+          <button class="icon-btn js-edit" title="${L("עריכה", "Edit")}" aria-label="${L("עריכת session", "Edit session")}">
             <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M13.5 3.5a1.77 1.77 0 0 1 2.5 2.5L7 15l-3.5 1L4.5 12.5l9-9Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
             </svg>
           </button>
-          <button class="icon-btn danger js-delete" title="מחיקה" aria-label="מחיקת session">
+          <button class="icon-btn danger js-delete" title="${L("מחיקה", "Delete")}" aria-label="${L("מחיקת session", "Delete session")}">
             <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M4 6h12M8.5 6V4.5h3V6M6 6l.7 9.5a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9L14 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
@@ -1357,14 +1493,14 @@
     const response = await fetch(SESSIONS_FUNCTION_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: currentToken, ...payload }),
+      body: JSON.stringify({ token: currentToken, lang: LANG, ...payload }),
     });
     let body = {};
     try { body = await response.json(); } catch (err) { /* גוף לא-JSON — נטופל למטה */ }
     if (!response.ok) {
       // הודעה ספציפית מהשרת (למשל "שעת הסיום לא יכולה להיות בעתיד")
       // גוברת על ההודעה הגנרית לפי קוד השגיאה.
-      const message = body.message || ERROR_MESSAGES[body.error] || "אירעה שגיאה לא צפויה.";
+      const message = body.message || ERROR_MESSAGES[body.error] || L("אירעה שגיאה לא צפויה.", "An unexpected error occurred.");
       throw new Error(message);
     }
     return body;
@@ -1384,9 +1520,11 @@
 
   function openAddModal() {
     editingId = null;
-    document.getElementById("session-modal-title").textContent = "הוספת session";
-    document.getElementById("session-modal-sub").textContent =
-      "רישום של שהייה בשמש שכבר הסתיימה. ה-UV ומדד החשיפה מחושבים אוטומטית בשרת.";
+    document.getElementById("session-modal-title").textContent = L("הוספת session", "Add session");
+    document.getElementById("session-modal-sub").textContent = L(
+      "רישום של שהייה בשמש שכבר הסתיימה. ה-UV ומדד החשיפה מחושבים אוטומטית בשרת.",
+      "Log time in the sun that already ended. UV and the exposure score are calculated on the server.",
+    );
     document.getElementById("f-city").value = "";
     document.getElementById("f-date").value = new Date().toISOString().slice(0, 10);
     document.getElementById("f-start").value = "";
@@ -1399,9 +1537,11 @@
 
   async function openEditModal(session) {
     editingId = session.id;
-    document.getElementById("session-modal-title").textContent = "עריכת session";
-    document.getElementById("session-modal-sub").textContent =
-      "ה-UV ומדד החשיפה יחושבו מחדש בשרת לפי הפרטים המעודכנים.";
+    document.getElementById("session-modal-title").textContent = L("עריכת session", "Edit session");
+    document.getElementById("session-modal-sub").textContent = L(
+      "ה-UV ומדד החשיפה יחושבו מחדש בשרת לפי הפרטים המעודכנים.",
+      "UV and the exposure score will be recalculated on the server from the updated details.",
+    );
     showModalError("session-modal-error", "");
     document.getElementById("session-modal").classList.add("open");
 
@@ -1409,7 +1549,7 @@
     // של הדפדפן, בעוד שהטופס עובד בשעון המקומי *של העיר* — לערוך שדה אחד
     // על סמך הערכים שבטבלה היה מזיז בשקט את השעות של session שהתרחש
     // באזור זמן אחר.
-    setBusy("session-save-btn", true, "טוען...", "שמירה");
+    setBusy("session-save-btn", true, L("טוען...", "Loading..."), L("שמירה", "Save"));
     try {
       const data = await callSessionsApi({ action: "read", id: session.id });
       document.getElementById("f-city").value = data.city || "";
@@ -1420,7 +1560,7 @@
     } catch (err) {
       showModalError("session-modal-error", err.message);
     } finally {
-      setBusy("session-save-btn", false, "טוען...", "שמירה");
+      setBusy("session-save-btn", false, L("טוען...", "Loading..."), L("שמירה", "Save"));
     }
   }
 
@@ -1441,15 +1581,20 @@
 
     // ולידציה מקומית זולה, רק כדי לא לשלוח בקשה שבטוח תיכשל. השרת
     // מאמת הכל שוב בעצמו — זו נוחות, לא שכבת אבטחה.
-    if (!session.city) return showModalError("session-modal-error", "צריך להזין עיר.");
-    if (!session.date) return showModalError("session-modal-error", "צריך לבחור תאריך.");
-    if (!session.start || !session.end) return showModalError("session-modal-error", "צריך להזין שעת התחלה ושעת סיום.");
+    if (!session.city) return showModalError("session-modal-error", L("צריך להזין עיר.", "Please enter a city."));
+    if (!session.date) return showModalError("session-modal-error", L("צריך לבחור תאריך.", "Please pick a date."));
+    if (!session.start || !session.end) {
+      return showModalError("session-modal-error", L("צריך להזין שעת התחלה ושעת סיום.", "Please enter a start and end time."));
+    }
     if (session.spf !== null && (!Number.isInteger(session.spf) || session.spf < 1 || session.spf > 100)) {
-      return showModalError("session-modal-error", "SPF צריך להיות מספר שלם בין 1 ל-100 (או ריק).");
+      return showModalError("session-modal-error", L(
+        "SPF צריך להיות מספר שלם בין 1 ל-100 (או ריק).",
+        "SPF must be a whole number from 1 to 100 (or empty).",
+      ));
     }
 
     showModalError("session-modal-error", "");
-    setBusy("session-save-btn", true, "שומר...", "שמירה");
+    setBusy("session-save-btn", true, L("שומר...", "Saving..."), L("שמירה", "Save"));
     try {
       if (editingId === null) {
         await callSessionsApi({ action: "create", session });
@@ -1461,14 +1606,16 @@
     } catch (err) {
       showModalError("session-modal-error", err.message);
     } finally {
-      setBusy("session-save-btn", false, "שומר...", "שמירה");
+      setBusy("session-save-btn", false, L("שומר...", "Saving..."), L("שמירה", "Save"));
     }
   }
 
   function openDeleteModal(session) {
     pendingDelete = session;
-    document.getElementById("delete-modal-text").textContent =
-      `למחוק את ה-session מ-${formatDate(session.date)} ב${session.city}, \u2066${session.start}–${session.end}\u2069?`;
+    document.getElementById("delete-modal-text").textContent = L(
+      `למחוק את ה-session מ-${formatDate(session.date)} ב${session.city}, \u2066${session.start}–${session.end}\u2069?`,
+      `Delete the session from ${formatDate(session.date)} in ${session.city}, ${session.start}–${session.end}?`,
+    );
     showModalError("delete-modal-error", "");
     document.getElementById("delete-modal").classList.add("open");
   }
@@ -1480,7 +1627,7 @@
 
   async function confirmDelete() {
     if (!pendingDelete) return;
-    setBusy("delete-confirm-btn", true, "מוחק...", "מחיקה");
+    setBusy("delete-confirm-btn", true, L("מוחק...", "Deleting..."), L("מחיקה", "Delete"));
     try {
       await callSessionsApi({ action: "delete", id: pendingDelete.id });
       closeDeleteModal();
@@ -1488,7 +1635,7 @@
     } catch (err) {
       showModalError("delete-modal-error", err.message);
     } finally {
-      setBusy("delete-confirm-btn", false, "מוחק...", "מחיקה");
+      setBusy("delete-confirm-btn", false, L("מוחק...", "Deleting..."), L("מחיקה", "Delete"));
     }
   }
 
@@ -1569,19 +1716,19 @@
     const statGrid = document.getElementById("stat-grid");
     statGrid.innerHTML = `
       <div class="stat-tile">
-        <div class="label">זמן כולל בשמש</div>
-        <div class="value">${totalMinutes} דק'</div>
+        <div class="label">${L("זמן כולל בשמש", "Total time in the sun")}</div>
+        <div class="value">${totalMinutes} ${L("דק'", "min")}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">UV ממוצע</div>
+        <div class="label">${L("UV ממוצע", "Average UV")}</div>
         <div class="value">${avgUv.toFixed(1)}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">מס' Sessions</div>
+        <div class="label">${L("מס' Sessions", "Sessions")}</div>
         <div class="value">${sessions.length}</div>
       </div>
       <div class="stat-tile">
-        <div class="label">מדד חשיפה יומי</div>
+        <div class="label">${L("מדד חשיפה יומי", "Daily exposure score")}</div>
         <div class="value status-${dayStatus}">${dayScore}%</div>
       </div>
     `;
@@ -1612,7 +1759,7 @@
       row.innerHTML = `
         <div class="tooltip">
           ${s.city} · <bdi>${s.start}–${s.end}</bdi><br>
-          UV ${s.uv.toFixed(1)} · חשיפה ${score}% · ${STATUS[status].label}
+          UV ${s.uv.toFixed(1)} · ${L("חשיפה", "exposure")} ${score}% · ${STATUS[status].label}
         </div>
         <div class="hbar-meta">
           <span class="hbar-label"><span class="hbar-rank">#${rank + 1}</span>${s.city} · <bdi>${s.start}–${s.end}</bdi></span>
@@ -1656,19 +1803,34 @@
     let msg;
     switch (status) {
       case "good":
-        msg = `רמת החשיפה שלך היום נמוכה (${score}% מהסף הבטוח, UV ממוצע ${avgUv.toFixed(1)}) — לא נדרשת הגנה מיוחדת מעבר לשגרה.`;
+        msg = L(
+          `רמת החשיפה שלך היום נמוכה (${score}% מהסף הבטוח, UV ממוצע ${avgUv.toFixed(1)}) — לא נדרשת הגנה מיוחדת מעבר לשגרה.`,
+          `Your exposure today is low (${score}% of the safe limit, average UV ${avgUv.toFixed(1)}) — no extra protection needed beyond the usual.`,
+        );
         break;
       case "warning":
-        msg = `רמת החשיפה שלך היום בינונית (${score}% מהסף הבטוח). מומלץ קרם הגנה אם אתה מתכנן להישאר בחוץ עוד זמן.`;
+        msg = L(
+          `רמת החשיפה שלך היום בינונית (${score}% מהסף הבטוח). מומלץ קרם הגנה אם אתה מתכנן להישאר בחוץ עוד זמן.`,
+          `Your exposure today is moderate (${score}% of the safe limit). Sunscreen is recommended if you plan to stay out longer.`,
+        );
         break;
       case "serious":
-        msg = `רמת החשיפה שלך היום בינונית-גבוהה (${score}% מהסף הבטוח, UV ממוצע ${avgUv.toFixed(1)}). מומלץ בהחלט קרם הגנה, כובע ומשקפי שמש.`;
+        msg = L(
+          `רמת החשיפה שלך היום בינונית-גבוהה (${score}% מהסף הבטוח, UV ממוצע ${avgUv.toFixed(1)}). מומלץ בהחלט קרם הגנה, כובע ומשקפי שמש.`,
+          `Your exposure today is moderate-high (${score}% of the safe limit, average UV ${avgUv.toFixed(1)}). Sunscreen, a hat and sunglasses are strongly recommended.`,
+        );
         break;
       default:
-        msg = `⚠️ רמת החשיפה שלך היום חרגה מהסף הבטוח (${score}%)! `;
+        msg = L(
+          `⚠️ רמת החשיפה שלך היום חרגה מהסף הבטוח (${score}%)! `,
+          `⚠️ Your exposure today went over the safe limit (${score}%)! `,
+        );
     }
     if (noSunscreen && status !== "good") {
-      msg += " שימו לב: לפחות ב-session אחד לא נעשה שימוש בקרם הגנה — זה משפיע משמעותית על התוצאה.";
+      msg += L(
+        " שימו לב: לפחות ב-session אחד לא נעשה שימוש בקרם הגנה — זה משפיע משמעותית על התוצאה.",
+        " Note: at least one session had no sunscreen — that makes a big difference to the result.",
+      );
     }
     return msg;
   }

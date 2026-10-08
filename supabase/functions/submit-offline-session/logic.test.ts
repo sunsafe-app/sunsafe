@@ -281,3 +281,29 @@ test("pythonRound rounds halves to even, where Math.round rounds up", () => {
   assert.equal(pythonRound(2.500001), 3); // מעל חצי — למעלה, בלי קשר לזוגיות
   assert.equal(pythonRound(7), 7);
 });
+
+// ---------------------------------------------------------------------
+// אנגלית (2026-10-08)
+// ---------------------------------------------------------------------
+import { localizeReason, validateSessionShape as _vss } from "./logic.ts";
+
+test("every shape-validation reason has an English translation", () => {
+  const base = {
+    client_uuid: "u", start_time: "2026-09-12T10:00:00Z", end_time: "2026-09-12T11:00:00Z",
+    start_lat: 32, start_lon: 34,
+  };
+  const reasons = [
+    _vss({ ...base, client_uuid: "" } as never),
+    _vss({ ...base, end_time: "" } as never),
+    _vss({ ...base, start_time: "x" } as never),
+    _vss({ ...base, end_time: "2026-09-12T09:00:00Z" } as never),
+    _vss({ ...base, end_time: "2026-09-14T10:00:00Z" } as never),
+    _vss({ ...base, start_lat: 999 } as never),
+  ];
+  for (const he of reasons) {
+    assert.ok(he, "expected a reason");
+    const en = localizeReason(he!, "en");
+    assert.ok(!/[֐-׿]/.test(en), `no English for: ${he}`);
+    assert.equal(localizeReason(he!, "he"), he);
+  }
+});

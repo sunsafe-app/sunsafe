@@ -383,3 +383,35 @@ test("pythonRound rounds halves to even, where Math.round rounds up", () => {
   assert.equal(pythonRound(2.500001), 3); // מעל חצי — למעלה, בלי קשר לזוגיות
   assert.equal(pythonRound(7), 7);
 });
+
+// ---------------------------------------------------------------------
+// אנגלית (2026-10-08)
+// ---------------------------------------------------------------------
+import { localizeMessage, normalizeLang, resolveSessionTimes as _rst, validateResolvedTimes as _vrt } from "./logic.ts";
+
+test("every user-facing message from the time checks has an English translation", () => {
+  const now = new Date("2026-09-12T12:00:00Z");
+  const produced = [
+    _rst("bad", "bad", now),
+    _rst("2026-09-13T10:00:00Z", "2026-09-13T11:00:00Z", now),     // start in the future
+    _rst("2026-09-12T10:00:00Z", "2026-09-12T09:00:00Z", now),     // end before start, shift lands in future
+  ].map((r) => ("message" in r ? r.message : null));
+  produced.push(
+    _vrt("2026-09-10T10:00:00Z", "2026-09-10T09:00:00Z", now),
+    _vrt("2026-09-10T00:00:00Z", "2026-09-11T01:00:00Z", now),
+    _vrt("2026-09-12T11:00:00Z", "2026-09-12T13:00:00Z", now),
+    _vrt("2026-05-01T10:00:00Z", "2026-05-01T11:00:00Z", now),
+  );
+  for (const he of produced) {
+    assert.ok(he, "expected an error message");
+    const en = localizeMessage(he!, "en");
+    assert.notEqual(en, he, `no English for: ${he}`);
+    assert.ok(!/[֐-׿]/.test(en), `Hebrew left in: ${en}`);
+    assert.equal(localizeMessage(he!, "he"), he);
+  }
+});
+
+test("normalizeLang: anything but 'en' is Hebrew", () => {
+  assert.equal(normalizeLang("en"), "en");
+  for (const v of ["he", undefined, null, "fr", 1]) assert.equal(normalizeLang(v), "he");
+});

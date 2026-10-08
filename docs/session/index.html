@@ -169,7 +169,7 @@
       </div>
     </div>
 
-    <footer class="note">
+    <footer class="note" id="footer-note">
       טיפ: פתחו את הדף הזה פעם אחת כשיש לכם קליטה, לפני שיוצאים לשטח בלי אינטרנט —
       כך הוא נשמר במכשיר וימשיך לעבוד גם בלי חיבור.<br>
       Start/End כאן נשמרים במכשיר מיד, כולל מיקום GPS מדויק, ומסתנכרנים
@@ -182,6 +182,40 @@
 <script>
 (function () {
   "use strict";
+
+  // ---------------------------------------------------------------
+  // שפה (2026-10-08). ?lang= מגיע מכפתור /offline_session בבוט (לפי
+  // users.language), ונשמר במכשיר — כך שגם פתיחה אופליין מהמטמון, או
+  // מקישור בלי הפרמטר, נשארת באותה שפה.
+  // ---------------------------------------------------------------
+  const LANG = (() => {
+    const p = new URLSearchParams(location.search).get("lang");
+    try {
+      if (p === "en" || p === "he") { localStorage.setItem("sunsafe_lang", p); return p; }
+      if (localStorage.getItem("sunsafe_lang") === "en") return "en";
+    } catch (e) { /* בלי אחסון — לפי הקישור בלבד */ }
+    return p === "en" ? "en" : "he";
+  })();
+  const L = (he, en) => (LANG === "en" ? en : he);
+  const LOCALE = LANG === "en" ? "en-GB" : "he-IL";
+
+  if (LANG === "en") {
+    document.documentElement.lang = "en";
+    document.documentElement.dir = "ltr";
+    document.title = "SunSafe — Offline session";
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    set("block-message", "Open this page from the bot in Telegram (tap the button in the /offline_session message).");
+    document.querySelector("header.top h1").textContent = "☀️ SunSafe — Offline session";
+    const h2s = document.querySelectorAll(".card h2");
+    if (h2s[0]) h2s[0].textContent = "Current session";
+    if (h2s[1]) h2s[1].textContent = "Waiting to sync";
+    set("sync-btn", "🔄 Sync now");
+    document.getElementById("footer-note").innerHTML =
+      "Tip: open this page once while you have signal, before heading out with no internet — " +
+      "that saves it on your device so it keeps working offline.<br>" +
+      "Start/End are saved on the device immediately, with an exact GPS location, and sync " +
+      "to the server automatically when the connection is back.";
+  }
 
   // ---------------------------------------------------------------
   // הגדרות
@@ -205,7 +239,10 @@
   // ---------------------------------------------------------------
   function initTelegram() {
     if (!window.Telegram || !window.Telegram.WebApp) {
-      showBlocking("🔌", "לא זוהתה סביבת Telegram. פתחו את העמוד הזה מתוך הבוט (כפתור /offline_session), לא כקישור רגיל בדפדפן.");
+      showBlocking("🔌", L(
+        "לא זוהתה סביבת Telegram. פתחו את העמוד הזה מתוך הבוט (כפתור /offline_session), לא כקישור רגיל בדפדפן.",
+        "Telegram wasn't detected. Open this page from the bot (the /offline_session button), not as a regular browser link.",
+      ));
       return false;
     }
     tg = window.Telegram.WebApp;
@@ -213,7 +250,10 @@
 
     initData = tg.initData || "";
     if (!initData) {
-      showBlocking("🔒", "לא התקבל אימות מטלגרם (initData ריק). סגרו ופתחו את הדף הזה מחדש כשיש לכם קליטה.");
+      showBlocking("🔒", L(
+        "לא התקבל אימות מטלגרם (initData ריק). סגרו ופתחו את הדף הזה מחדש כשיש לכם קליטה.",
+        "No authentication from Telegram (empty initData). Close and reopen this page when you have signal.",
+      ));
       return false;
     }
 
@@ -290,7 +330,10 @@
   // Start / End
   // ---------------------------------------------------------------
   async function handleStart() {
-    renderCapturing("מאתר מיקום GPS... זה יכול לקחת עד כ-30 שניות בלי קליטה.");
+    renderCapturing(L(
+      "מאתר מיקום GPS... זה יכול לקחת עד כ-30 שניות בלי קליטה.",
+      "Finding your GPS location... this can take up to ~30 seconds without signal.",
+    ));
     try {
       const loc = await captureLocation();
       setOpenSession({
@@ -313,7 +356,7 @@
     const spfInput = document.getElementById("spf-input");
     const spfVal = spfInput && spfInput.value.trim() ? parseInt(spfInput.value.trim(), 10) : null;
 
-    renderCapturing("מאתר מיקום GPS לסיום ה-session...");
+    renderCapturing(L("מאתר מיקום GPS לסיום ה-session...", "Finding your GPS location to end the session..."));
     try {
       const loc = await captureLocation();
       const queue = getQueue();
@@ -338,10 +381,19 @@
   }
 
   function geoErrorMessage(err) {
-    if (err && err.message === "no_geolocation") return "המכשיר/הדפדפן לא תומך במיקום GPS.";
-    if (err && err.code === 1) return "הגישה למיקום נחסמה. אשרו הרשאת מיקום להגדרות ונסו שוב.";
-    if (err && err.code === 3) return "לא הצלחנו לאתר מיקום בזמן (timeout). נסו שוב — לפעמים לוקח יותר זמן בלי קליטה.";
-    return "לא הצלחנו לאתר מיקום. נסו שוב.";
+    if (err && err.message === "no_geolocation") {
+      return L("המכשיר/הדפדפן לא תומך במיקום GPS.", "This device/browser doesn't support GPS location.");
+    }
+    if (err && err.code === 1) {
+      return L("הגישה למיקום נחסמה. אשרו הרשאת מיקום להגדרות ונסו שוב.", "Location access was blocked. Allow location permission and try again.");
+    }
+    if (err && err.code === 3) {
+      return L(
+        "לא הצלחנו לאתר מיקום בזמן (timeout). נסו שוב — לפעמים לוקח יותר זמן בלי קליטה.",
+        "Couldn't get a location in time (timeout). Try again — it sometimes takes longer without signal.",
+      );
+    }
+    return L("לא הצלחנו לאתר מיקום. נסו שוב.", "Couldn't get your location. Try again.");
   }
 
   function showActionError(message) {
@@ -359,20 +411,22 @@
     const queue = getQueue();
     const pending = queue.filter((s) => !s.rejected);
     if (pending.length === 0) {
-      setSyncStatus(queue.length ? "יש פריטים שנדחו — ראו פירוט למטה" : "אין מה לסנכרן");
+      setSyncStatus(queue.length
+        ? L("יש פריטים שנדחו — ראו פירוט למטה", "Some items were rejected — see details below")
+        : L("אין מה לסנכרן", "Nothing to sync"));
       return;
     }
 
-    setSyncStatus("מסנכרן...");
+    setSyncStatus(L("מסנכרן...", "Syncing..."));
     let resp;
     try {
       resp = await fetch(SYNC_FUNCTION_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ initData, sessions: pending }),
+        body: JSON.stringify({ initData, sessions: pending, lang: LANG }),
       });
     } catch (err) {
-      setSyncStatus("אין חיבור כרגע — ינסה שוב אוטומטית");
+      setSyncStatus(L("אין חיבור כרגע — ינסה שוב אוטומטית", "No connection right now — will retry automatically"));
       return;
     }
 
@@ -381,13 +435,13 @@
 
     if (!resp.ok || !body) {
       if (resp.status === 401) {
-        setSyncStatus("אימות הזהות פג — סגרו ופתחו את הדף מחדש כשיש קליטה");
+        setSyncStatus(L("אימות הזהות פג — סגרו ופתחו את הדף מחדש כשיש קליטה", "Authentication expired — close and reopen the page when you have signal"));
       } else if (resp.status === 404) {
-        setSyncStatus("עוד לא הוגדר סוג עור בבוט (/set_skin_type) — הנתונים שמורים, ינסה שוב");
+        setSyncStatus(L("עוד לא הוגדר סוג עור בבוט (/set_skin_type) — הנתונים שמורים, ינסה שוב", "No skin type set in the bot yet (/start) — your data is saved, will retry"));
       } else if (resp.status === 400 && body && body.error === "missing_username") {
-        setSyncStatus("אין לכם @username ציבורי בהגדרות טלגרם — הגדירו אחד כדי שהבוט יזהה אתכם");
+        setSyncStatus(L("אין לכם @username ציבורי בהגדרות טלגרם — הגדירו אחד כדי שהבוט יזהה אתכם", "You don't have a public @username in Telegram settings — set one so the bot can recognise you"));
       } else {
-        setSyncStatus("שגיאת שרת בסנכרון — ינסה שוב אוטומטית");
+        setSyncStatus(L("שגיאת שרת בסנכרון — ינסה שוב אוטומטית", "Server error while syncing — will retry automatically"));
       }
       return;
     }
@@ -402,7 +456,9 @@
 
     setQueue(updated);
     renderAll();
-    setSyncStatus(accepted.size ? `סונכרנו ${accepted.size} sessions בהצלחה` : "סנכרון הושלם");
+    setSyncStatus(accepted.size
+      ? L(`סונכרנו ${accepted.size} sessions בהצלחה`, `Synced ${accepted.size} sessions`)
+      : L("סנכרון הושלם", "Sync complete"));
   }
 
   function setSyncStatus(text) {
@@ -427,14 +483,14 @@
       area.innerHTML = `
         <div class="elapsed">
           <div class="time" id="elapsed-time">00:00</div>
-          <div class="label">פתוח מאז ${new Date(open.start_time).toLocaleTimeString("he-IL", {hour:"2-digit",minute:"2-digit"})}</div>
+          <div class="label">${L("פתוח מאז", "Open since")} ${new Date(open.start_time).toLocaleTimeString(LOCALE, {hour:"2-digit",minute:"2-digit"})}</div>
         </div>
         <div class="spf-row">
-          <label for="spf-input">SPF (רשות):</label>
-          <input type="number" id="spf-input" min="0" max="100" placeholder="למשל 30">
+          <label for="spf-input">${L("SPF (רשות):", "SPF (optional):")}</label>
+          <input type="number" id="spf-input" min="0" max="100" placeholder="${L("למשל 30", "e.g. 30")}">
         </div>
-        <button class="big-btn end" id="end-btn">🔴 סיים Session
-          <span class="sub">שומר מיקום + זמן סיום, במכשיר</span>
+        <button class="big-btn end" id="end-btn">${L("🔴 סיים Session", "🔴 End session")}
+          <span class="sub">${L("שומר מיקום + זמן סיום, במכשיר", "Saves location + end time on the device")}</span>
         </button>
       `;
       document.getElementById("end-btn").addEventListener("click", handleEnd);
@@ -442,8 +498,8 @@
       elapsedTimer = setInterval(() => updateElapsed(open.start_time), 1000);
     } else {
       area.innerHTML = `
-        <button class="big-btn start" id="start-btn">🟢 התחל Session
-          <span class="sub">שומר מיקום + זמן התחלה, במכשיר — גם בלי קליטה</span>
+        <button class="big-btn start" id="start-btn">${L("🟢 התחל Session", "🟢 Start session")}
+          <span class="sub">${L("שומר מיקום + זמן התחלה, במכשיר — גם בלי קליטה", "Saves location + start time on the device — even with no signal")}</span>
         </button>
       `;
       document.getElementById("start-btn").addEventListener("click", handleStart);
@@ -465,7 +521,7 @@
     const list = document.getElementById("queue-list");
     const queue = getQueue();
     if (queue.length === 0) {
-      list.innerHTML = '<div class="queue-empty">אין sessions ממתינים — הכל מסונכרן.</div>';
+      list.innerHTML = `<div class="queue-empty">${L("אין sessions ממתינים — הכל מסונכרן.", "No sessions waiting — everything is synced.")}</div>`;
       return;
     }
     list.innerHTML = "";
@@ -475,13 +531,13 @@
       row.className = "queue-item";
       row.innerHTML = `
         <div class="info">
-          ${new Date(s.start_time).toLocaleDateString("he-IL")} ·
-          ${new Date(s.start_time).toLocaleTimeString("he-IL", {hour:"2-digit",minute:"2-digit"})}–${new Date(s.end_time).toLocaleTimeString("he-IL", {hour:"2-digit",minute:"2-digit"})}
-          (${durMin} דק')
+          ${new Date(s.start_time).toLocaleDateString(LOCALE)} ·
+          ${new Date(s.start_time).toLocaleTimeString(LOCALE, {hour:"2-digit",minute:"2-digit"})}–${new Date(s.end_time).toLocaleTimeString(LOCALE, {hour:"2-digit",minute:"2-digit"})}
+          (${durMin} ${L("דק'", "min")})
           <div class="muted">${s.start_lat.toFixed(4)}, ${s.start_lon.toFixed(4)}${s.spf ? " · SPF " + s.spf : ""}</div>
-          ${s.rejected ? `<div class="reason">נדחה: ${s.rejected}</div>` : ""}
+          ${s.rejected ? `<div class="reason">${L("נדחה:", "Rejected:")} ${s.rejected}</div>` : ""}
         </div>
-        <button class="del" title="מחק פריט זה" data-uuid="${s.client_uuid}">✕</button>
+        <button class="del" title="${L("מחק פריט זה", "Delete this item")}" data-uuid="${s.client_uuid}">✕</button>
       `;
       row.querySelector(".del").addEventListener("click", () => {
         setQueue(getQueue().filter((q) => q.client_uuid !== s.client_uuid));
@@ -493,14 +549,16 @@
 
   function renderWho() {
     const el = document.getElementById("who-line");
-    el.textContent = tgUser ? `מחובר כ-@${tgUser.username || tgUser.first_name || tgUser.id}` : "מחובר לטלגרם";
+    el.textContent = tgUser
+      ? `${L("מחובר כ-", "Signed in as ")}@${tgUser.username || tgUser.first_name || tgUser.id}`
+      : L("מחובר לטלגרם", "Connected to Telegram");
   }
 
   function renderAll() {
     renderWho();
     renderAction();
     renderQueue();
-    setSyncStatus(navigator.onLine ? "מוכן" : "אין חיבור כרגע");
+    setSyncStatus(navigator.onLine ? L("מוכן", "Ready") : L("אין חיבור כרגע", "No connection right now"));
   }
 
   // ---------------------------------------------------------------

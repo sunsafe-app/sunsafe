@@ -67,9 +67,10 @@
   <div class="card">
     <div class="emoji">☀️</div>
     <h1>SunSafe</h1>
-    <p>מעביר אותך לאזור האישי...</p>
-    <a class="btn" href="dashboard/index.html">כניסה לאזור האישי</a>
+    <p>מעביר אותך לאזור האישי... · Taking you to your dashboard...</p>
+    <a class="btn" href="dashboard/index.html">כניסה לאזור האישי · Open dashboard</a>
   </div>
-  <script>location.replace("dashboard/index.html");</script>
+  <!-- location.search נשמר (2026-10-08) — כדי ש-?token=&lang= לא ילכו לאיבוד בדרך. -->
+  <script>location.replace("dashboard/index.html" + location.search);</script>
 </body>
 </html>

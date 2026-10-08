@@ -8,7 +8,7 @@
    לעברית" — וקיבל אנגלית בשתי הפעמים, כולל "I am already speaking
    Hebrew!" שנכתב באנגלית. ראו את שחזור השיחה בסעיף 7.
 
-ובסוף אותו יום התמיכה באנגלית **כובתה** לבקשת המשתמש ("נחזור לזה
+2026-10-08: אנגלית הודלקה מחדש, עם שפה שמורה לכל משתמש (users.language).
 מאוחר יותר"). הקובץ הזה בודק עכשיו שני דברים במקביל: שהבוט אכן מדבר
 עברית בלבד כרגע, ושהתשתית והתרגומים נשארו שלמים מתחת למתג — כך
 שההפעלה מחדש תהיה שינוי של שורה אחת (i18n.ENGLISH_ENABLED).
@@ -51,33 +51,64 @@ def check(name, condition, detail=""):
 
 
 # ---------------------------------------------------------------------
-# 1) resolve_language — כרגע עברית תמיד (ENGLISH_ENABLED=False)
+# 1) קביעת השפה (2026-10-08: אנגלית דולקת, שפה שמורה לכל משתמש)
 # ---------------------------------------------------------------------
-# התמיכה באנגלית נבנתה ונכבתה באותו יום (2026-09-14). המתג ב-i18n.py
-# מבטיח שאין מצב ביניים: כל עוד הוא כבוי, כל הודעה נענית בעברית ללא
-# קשר לשפה שנכתבה בה או להגדרת הלקוח.
-cases = {
-    "עברית": "he",
-    "hello": "he",                    # אנגלית כבויה -> עברית
-    "Switch language to Hebrew": "he",
-    "/start": "he",
-    "/start_session Tel Aviv": "he",
-    "14:30": "he",
-    "": "he",
-    None: "he",
-}
-for text, expected in cases.items():
-    got = i18n.resolve_language(text)
-    check(f"resolve_language({str(text)[:26]!r}) -> {expected}", got == expected, f"-> {got}")
-
-check("English is switched off", i18n.ENGLISH_ENABLED is False)
+check("English is switched on", i18n.ENGLISH_ENABLED is True)
 check("Hebrew is the default", i18n.DEFAULT_LANGUAGE == "he")
 
-# הזיהוי עצמו נשאר תקין *מתחת* למתג, כדי שההפעלה מחדש תהיה שינוי של
-# שורה אחת ולא בנייה מחדש.
+# מתי הודעה *מחליפה* שפה. שמרני: פקודות אף פעם, שמות ערים לא.
+for text, expected in {
+    "עברית": "he",
+    "English?": "en",
+    "שנה שפה לאנגלית": "en",            # כתוב בעברית, מבקש אנגלית
+    "Switch language to Hebrew": "he",  # כתוב באנגלית, מבקש עברית
+    "I am already speaking Hebrew!": "he",
+    "what is the UV in Haifa": "en",
+    "מה ה-UV בחיפה": "he",
+    "Tel Aviv": None,                   # שם עיר, לא שפה
+    "UV Haifa": None,
+    "/start_session Tel Aviv": None,    # פקודה — אף פעם
+    "/language en": None,
+    "14:30": None,
+    "": None,
+    None: None,
+}.items():
+    got = i18n.detect_language_switch(text)
+    check(f"detect_language_switch({str(text)[:28]!r}) -> {expected}", got == expected, f"-> {got}")
+
+# סדר העדיפויות: מה שנכתב > מה שנשמר > language_code (רק לחדש) > עברית
+for (text, stored, client), expected in {
+    (("/end_session 30", "en", None)): ("en", False),   # בלי אותיות -> השמורה
+    (("/end_session 30", "he", "en")): ("he", False),    # הלקוח לא גובר על השמורה
+    (("What's the UV in Haifa now?", "he", "he")): ("en", True),
+    (("/start", None, "en")): ("en", True),              # חדש, לקוח באנגלית
+    (("/start", None, "de")): ("en", True),              # חדש, לא דובר עברית
+    (("/start", None, "he")): ("he", True),
+    (("/start", None, None)): ("he", True),
+    (("עברית", None, "en")): ("he", True),               # מה שנכתב גובר על הלקוח
+}.items():
+    got = i18n.resolve_user_language(text, stored, client)
+    check(f"resolve_user_language({text[:16]!r}, stored={stored}, client={client}) -> {expected}",
+          got == expected, f"-> {got}")
+
+for text, expected in {"English?": True, "עברית בבקשה": True, "in Hebrew please": True,
+                       "What's the UV in Tel Aviv in English?": False, "/language": False,
+                       "Tel Aviv": False}.items():
+    check(f"is_language_request({text!r}) -> {expected}", i18n.is_language_request(text) == expected)
+
+# הזיהוי הישן לפי תווים נשאר (משמש ב-resolve_language)
 for text, expected in {"עברית": "he", "hello": "en", "/start": None, "14:30": None, "": None}.items():
     got = i18n.detect_language_from_text(text)
     check(f"detect_language_from_text({str(text)[:20]!r}) -> {expected}", got == expected, f"-> {got}")
+
+# L() ו-t() קוראות את שפת העדכון הנוכחי
+i18n.set_lang("en")
+check("L() follows the current language", i18n.L("שלום", "hello") == "hello")
+check("t() follows the current language", i18n.t("skin_question") == "What's your skin type?")
+i18n.set_lang("he")
+check("...and back", i18n.L("שלום", "hello") == "שלום")
+i18n.set_lang("fr")
+check("an unsupported language falls back to Hebrew", i18n.get_lang() == "he")
 
 # ---------------------------------------------------------------------
 # 2) שלמות טבלת המחרוזות
@@ -111,54 +142,142 @@ check("t() falls back to Hebrew for an unknown language",
       i18n.t("skin_question", "de") == i18n.t("skin_question", "he"))
 
 # ---------------------------------------------------------------------
-# 3) onboarding — עברית בפועל, והתרגום האנגלי נשאר שמור לעתיד
+# 3) onboarding ופקודות בשתי השפות
 # ---------------------------------------------------------------------
-messages, photos = [], []
-with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))), \
-     patch.object(bc, "send_photo", lambda cid, img, caption=None, reply_markup=None: photos.append((caption, reply_markup))), \
+def run_update(text, stored, client_lang="en", username="gil612", extra_patches=()):
+    """מריץ handle_update אמיתי עם שפה שמורה מדומה. מחזיר (הודעות, תמונות, שפות שנשמרו)."""
+    msgs, pics, saved = [], [], []
+    bc._user_language_cache.clear()
+    with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append((text, reply_markup))), \
+         patch.object(bc, "send_photo", lambda cid, img, caption=None, reply_markup=None: pics.append((caption, reply_markup))), \
+         patch.object(bc, "_load_fitzpatrick_scale_image", lambda: b"png"), \
+         patch.object(bc, "update_rows", lambda *a, **k: []), \
+         patch.object(bc, "_stored_language", lambda u: stored), \
+         patch.object(bc, "_remember_language", lambda u, l: saved.append(l)), \
+         patch.object(bc, "_mirror_incoming_to_admin", lambda *a, **k: None):
+        for p in extra_patches:
+            p.start()
+        try:
+            bc._pending_skin_type_pick.clear()
+            bc.handle_update({"message": {
+                "chat": {"id": 123},
+                "from": {"username": username, "language_code": client_lang},
+                "text": text,
+            }})
+        finally:
+            for p in extra_patches:
+                p.stop()
+    return msgs, pics, saved
+
+
+# משתמש חדש עם טלגרם באנגלית -> פתיחה באנגלית, ועם כפתורי שפה לתיקון מהיר
+msgs, pics, saved = run_update("/start", stored=None, client_lang="en")
+check("a new English-client user gets the English welcome",
+      msgs and msgs[0][0].startswith("☀️ Welcome to SunSafe"), f"-> {msgs[0][0][:30] if msgs else None}")
+lang_buttons = [b["callback_data"] for row in (msgs[0][1] or {}).get("inline_keyboard", []) for b in row] if msgs else []
+check("...with both language buttons on it", lang_buttons == ["lang:he:start", "lang:en:start"], f"-> {lang_buttons}")
+labels = [b["text"] for row in pics[0][1]["inline_keyboard"] for b in row]
+check("...and English skin-type buttons", "3 · Medium" in labels, f"-> {labels[:3]}")
+check("...and the guess is remembered", saved == ["en"], f"-> {saved}")
+
+# משתמש ותיק ששמור בעברית — לקוח באנגלית לא משנה כלום (התקלה מ-14.9)
+msgs, pics, saved = run_update("/start", stored="he", client_lang="en")
+check("a stored-Hebrew user with an English client still gets Hebrew",
+      msgs and "ברוכים הבאים" in msgs[0][0])
+check("...and nothing is re-saved", saved == [], f"-> {saved}")
+
+# פקודה בלי אותיות בכלל — רק השפה השמורה יכולה לענות נכון
+msgs, _, _ = run_update("/end_session abc", stored="en", client_lang="he")
+check("a command with no language signal answers in the stored language (en)",
+      msgs and msgs[0][0].startswith("Without sunscreen"), f"-> {msgs[0][0][:30] if msgs else None}")
+msgs, _, _ = run_update("/end_session abc", stored="he", client_lang="en")
+check("...and in Hebrew for a Hebrew user", msgs and msgs[0][0].startswith("בלי קרם הגנה"))
+
+# בקשת שפה קצרה מקבלת אישור ישיר, לא את ה-Agent Loop
+agent_calls = []
+msgs, _, saved = run_update(
+    "English?", stored="he",
+    extra_patches=(patch.object(bc, "classify_message", lambda t: "VALID"),
+                   patch.object(bc, "run_agent_via_mcp", lambda task: agent_calls.append(task) or "...")),
+)
+check("'English?' switches the language", saved and set(saved) == {"en"}, f"-> {saved}")
+check("...confirms in English", msgs and "in English from now on" in msgs[0][0], f"-> {msgs[0][0][:40] if msgs else None}")
+check("...without calling the agent", not agent_calls)
+
+# לחיצה על כפתור שפה
+msgs, saved = [], []
+bc._user_language_cache.clear()
+with patch.object(bc, "answer_callback_query", lambda qid, text=None: None), \
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append(text)), \
+     patch.object(bc, "_stored_language", lambda u: "en"), \
+     patch.object(bc, "_remember_language", lambda u, l: saved.append(l)), \
+     patch.object(bc, "select_rows", lambda *a, **k: []):
+    bc.handle_callback_query({
+        "id": "q1", "data": "lang:he",
+        "from": {"username": "gil612", "language_code": "en"},
+        "message": {"chat": {"id": 123}, "text": "☀️ Welcome to SunSafe!"},
+    })
+check("the 🇮🇱 button saves Hebrew", saved == ["he"], f"-> {saved}")
+check("...confirms in Hebrew", msgs and "בעברית" in msgs[0], f"-> {msgs[:1]}")
+check("...and re-asks the skin type in Hebrew for a user who has none yet",
+      len(msgs) == 2 and msgs[1] == "מה סוג העור שלכם?", f"-> {msgs[1:]}")
+
+# לחיצה על כפתור שפה *בהודעת הפתיחה* — ה-onboarding כולו נשלח מחדש בשפה
+# החדשה, גם למשתמש שכבר יש לו סוג עור (תקלה 8.10: קיבל רק אישור, והסולם
+# והכפתורים נשארו בעברית).
+msgs, pics, saved = [], [], []
+with patch.object(bc, "answer_callback_query", lambda qid, text=None: None), \
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append((text, reply_markup))), \
+     patch.object(bc, "send_photo", lambda cid, img, caption=None, reply_markup=None: pics.append((caption, reply_markup))), \
      patch.object(bc, "_load_fitzpatrick_scale_image", lambda: b"png"), \
-     patch.object(bc, "update_rows"), \
-     patch.object(bc, "_mirror_incoming_to_admin", lambda *a, **k: None):
-    bc._pending_skin_type_pick.clear()
-    bc.handle_update({"message": {
-        "chat": {"id": 123},
-        "from": {"username": "gil612", "language_code": "en"},   # לקוח מוגדר-אנגלית
-        "text": "/start",
-    }})
+     patch.object(bc, "_stored_language", lambda u: "he"), \
+     patch.object(bc, "_remember_language", lambda u, l: saved.append(l)), \
+     patch.object(bc, "select_rows", lambda *a, **k: [{"skin_type": 3}]):
+    bc.handle_callback_query({
+        "id": "q1", "data": "lang:en:start",
+        "from": {"username": "gil612", "language_code": "he"},
+        "message": {"chat": {"id": 123}, "text": "☀️ ברוכים הבאים ל-SunSafe!"},
+    })
+check("the welcome-message English button saves English", saved == ["en"], f"-> {saved}")
+check("...and re-sends the welcome in English", msgs and msgs[0][0].startswith("☀️ Welcome to SunSafe"),
+      f"-> {msgs[0][0][:30] if msgs else None}")
+check("...and the skin-type picker in English",
+      pics and "3 · Medium" in [b["text"] for row in pics[0][1]["inline_keyboard"] for b in row])
+check("...with the language buttons still marked as coming from /start",
+      msgs and msgs[0][1]["inline_keyboard"][0][1]["callback_data"] == "lang:en:start")
 
-check("an English-locale client still gets the Hebrew welcome",
-      messages and "ברוכים הבאים" in messages[0][0], f"-> {messages[0][0][:40] if messages else None}")
-labels = [b["text"] for row in photos[0][1]["inline_keyboard"] for b in row]
-check("...and Hebrew buttons", "3 · בינוני" in labels, f"-> {labels[:3]}")
-check("...with no English leaking through",
-      not any("Medium" in l or "Fair" in l for l in labels), f"-> {labels}")
-
-# לחיצה על כפתור — עברית גם אם הכפתור ישב על הודעה אנגלית מלפני הכיבוי.
-messages, answered = [], []
+# לחיצה על כפתור סוג עור — בשפה השמורה, לא בשפת ההודעה שהכפתור יושב עליה
+msgs = []
 with patch.object(bc, "upsert_row", lambda *a, **k: None), \
-     patch.object(bc, "answer_callback_query", lambda qid, text=None: answered.append(text)), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append(text)):
+     patch.object(bc, "answer_callback_query", lambda qid, text=None: None), \
+     patch.object(bc, "_stored_language", lambda u: "he"), \
+     patch.object(bc, "_remember_language", lambda u, l: None), \
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append(text)):
     bc.handle_callback_query({
         "id": "q1", "data": "skin:4",
         "from": {"username": "gil612", "language_code": "en"},
         "message": {"chat": {"id": 123}, "caption": "🎨 Compare with your natural skin tone"},
     })
-check("a button tap answers in Hebrew while English is off",
-      messages and "נשמר: סוג עור 4 · זית" in messages[0], f"-> {messages[0][:45] if messages else None}")
+check("a skin button answers in the stored language",
+      msgs and "נשמר: סוג עור 4 · זית" in msgs[0], f"-> {msgs[0][:45] if msgs else None}")
 
-# מי שאין לו GPS חייב לקבל כאן דרך חלופית: זה האישור היחיד בסוף
-# ה-onboarding, וטלגרם לא מודיע לבוט כשמשתמש מסרב להרשאת מיקום —
-# כלומר אין שום נקודה מאוחרת יותר שבה אפשר להציע לו משהו.
-confirmation = messages[0] if messages else ""
+# מי שאין לו GPS חייב לקבל כאן דרך חלופית — בשתי השפות.
+confirmation = msgs[0] if msgs else ""
 check("the confirmation offers a no-GPS alternative", "אין GPS" in confirmation)
 check("...naming the command, since a bare city name does NOT open a session",
       "/start_session חיפה" in confirmation, f"-> ...{confirmation[-70:]}")
 check("...and showing the coordinates form too", "32.08, 34.78" in confirmation)
+check("...and in English too", "/start_session Haifa" in i18n.t("skin_saved", "en", label="x"))
 
-# התרגומים עצמם שמורים ותקינים — זה מה שיאפשר להדליק את המתג בחזרה.
-check("the English translations are still intact underneath",
-      i18n.t("welcome", "en").startswith("☀️ Welcome to SunSafe"))
-check("...including the button labels", i18n.skin_type_label(3, "en") == "3 · Medium")
+# הקישור לדשבורד ול-Mini App נושא את השפה
+i18n.set_lang("en")
+with patch.object(bc, "insert_row", lambda *a, **k: None):
+    link = bc.create_magic_link("gil612")
+check("the dashboard link carries lang=en", link.endswith("&lang=en"), f"-> {link[-20:]}")
+check("format_duration in English", bc.format_duration_he(105) == "about 1 hour 45 minutes",
+      f"-> {bc.format_duration_he(105)}")
+i18n.set_lang("he")
+check("...and in Hebrew", bc.format_duration_he(105) == "כשעה ו-45 דקות")
 
 # ---------------------------------------------------------------------
 # 4) ה-dispatch
@@ -188,8 +307,7 @@ check("a plain handler is still called with three arguments", called.get("plain"
 # ---------------------------------------------------------------------
 check("the agent prompt asks for a Hebrew answer",
       "ענה בעברית" in bc._build_freeform_task("מה ה-UV?", "he"))
-# המנגנון עצמו עדיין יודע אנגלית — רק אף אחד לא מבקש ממנו כרגע.
-check("the machinery still supports English for when the switch returns",
+check("the agent prompt asks for an English answer for English users",
       "ענה באנגלית" in bc._build_freeform_task("what's the UV?", "en"))
 check("the agent prompt now covers questions about the bot itself",
       "שאלה על הבוט עצמו" in bc._build_freeform_task("x", "he"))
@@ -212,55 +330,36 @@ check("the stale command list is gone from the prompt",
 
 
 # ---------------------------------------------------------------------
-# 7) שחזור השיחה מהפרודקשן, הודעה־הודעה
+# 7) שחזור השיחה מהפרודקשן (14.9), עכשיו עם שפה שמורה
 # ---------------------------------------------------------------------
-# בדיוק שלוש ההודעות מצילום המסך, מאותו משתמש עם language_code="en".
-# כל אחת מהן עוברת דרך handle_update האמיתי, ואנחנו בודקים באיזו שפה
-# ה-Agent Loop התבקש לענות. בגרסה השבורה כל השלוש היו "ענה באנגלית";
-# עכשיו, עם אנגלית כבויה, כולן בעברית.
-conversation = [
-    ("עברית", "he"),
-    ("שנה שפה לעברית", "he"),
-    ("Switch language to Hebrew", "he"),   # אנגלית כבויה -> עברית
-]
-for text, expected_lang in conversation:
-    asked = {}
-
-    def fake_agent(task):
-        asked["task"] = task
-        return "..."
-
-    with patch.object(bc, "classify_message", lambda t: "VALID"), \
-         patch.object(bc, "update_rows"), \
-         patch.object(bc, "send_message", lambda *a, **k: None), \
-         patch.object(bc, "_mirror_incoming_to_admin", lambda *a, **k: None), \
-         patch.object(bc, "run_agent_via_mcp", fake_agent):
-        bc.handle_update({
-            "message": {
-                "chat": {"id": 123},
-                "from": {"username": "Chatgil_0", "language_code": "en"},
-                "text": text,
-            }
-        })
-
-    wanted = "ענה בעברית" if expected_lang == "he" else "ענה באנגלית"
-    check(
-        f"'{text}' -> the agent is asked to answer in {expected_lang}",
-        wanted in asked.get("task", ""),
-        f"-> {'ענה בעברית' if 'ענה בעברית' in asked.get('task','') else 'ענה באנגלית'}",
+# אותו משתמש, טלגרם מוגדר-אנגלית, שמור בעברית. "עברית" ו-"Switch
+# language to Hebrew" הן בקשות שפה -> אישור בעברית. "שנה שפה לעברית" —
+# גם. אף אחת לא אמורה להגיע ל-"I am already speaking Hebrew!".
+for text in ("עברית", "שנה שפה לעברית", "Switch language to Hebrew"):
+    msgs, _, saved = run_update(
+        text, stored="he", username="Chatgil_0",
+        extra_patches=(patch.object(bc, "classify_message", lambda t: "VALID"),
+                       patch.object(bc, "run_agent_via_mcp", lambda task: "...")),
     )
+    check(f"'{text}' -> confirmed in Hebrew", msgs and "בעברית" in msgs[0][0],
+          f"-> {msgs[0][0][:30] if msgs else None}")
 
-# והמקור להזיה: ה-prompt חייב לאסור במפורש להמציא מתג שפה, אחרי
-# ש-Gemini שלח משתמש "to the dashboard" כדי להחליף שפה — מסך שלא קיים.
+# שאלה חופשית באנגלית -> Agent Loop מתבקש לענות באנגלית
+asked = {}
+run_update(
+    "What's the UV in Tel Aviv right now?", stored="he", username="Chatgil_0",
+    extra_patches=(patch.object(bc, "classify_message", lambda t: "VALID"),
+                   patch.object(bc, "run_agent_via_mcp", lambda task: asked.setdefault("task", task) or "...")),
+)
+check("an English question -> the agent answers in English", "באנגלית" in asked.get("task", ""))
+
 task = bc._build_freeform_task("שנה שפה", "he")
-check("the prompt states the truth: Hebrew only for now",
-      "עובד בעברית בלבד" in task)
-check("the prompt forbids inventing a language setting",
-      "אין** הגדרת" in task and "אסור להמציא" in task)
+check("the prompt states the truth: Hebrew and English", "עברית ואנגלית" in task)
+check("the prompt points at /language", "/language" in task)
+check("the prompt forbids inventing a settings screen", "אסור להמציא" in task)
 check("the prompt forbids sending the user to the dashboard for language",
-      "לדשבורד בשביל שפה" in task)
-check("the prompt forbids promising languages the bot doesn't speak",
-      "אסור להבטיח שפות" in task)
+      "לדשבורד" in task and "בשביל שפה" in task)
+check("the prompt forbids promising other languages", "אסור להבטיח שפות אחרות" in task)
 
 
 print()

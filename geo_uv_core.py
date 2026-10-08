@@ -249,20 +249,41 @@ def daily_summary_he(
     session_count ו-peak_* נשארים בחתימה — ה-Worker וה-fixture
     מעבירים אותם, והם עשויים לחזור לתצוגה. הם לא מוצגים כרגע.
     """
-    return "\n".join([
-        f"{exposure_bar(day_score)}  {day_score}%",
-        f"היום: {round(total_minutes)} דקות בשמש",
-    ])
+    return daily_summary(day_score, session_count, total_minutes, peak_city, peak_score, "he")
+
+
+def daily_summary(
+    day_score: int,
+    session_count: int,
+    total_minutes: float,
+    peak_city: str | None = None,
+    peak_score: int | None = None,
+    lang: str = "he",
+) -> str:
+    """daily_summary_he בשתי השפות (2026-10-08). ה-Worker משכפל את שתיהן."""
+    minutes_line = (
+        f"Today: {round(total_minutes)} min in the sun"
+        if lang == "en"
+        else f"היום: {round(total_minutes)} דקות בשמש"
+    )
+    return "\n".join([f"{exposure_bar(day_score)}  {day_score}%", minutes_line])
 
 
 # ---------------------------------------------------------------------
 # Geocoding — Open-Meteo (ראשי) + Nominatim (גיבוי)
 # ---------------------------------------------------------------------
-def _raw_geocode_search(client: httpx.Client, name: str, count: int = 1) -> list[dict]:
-    """קריאה גולמית ל-Open-Meteo Geocoding — מחזירה עד `count` מועמדים גולמיים."""
+def _raw_geocode_search(client: httpx.Client, name: str, count: int = 1, language: str = "he") -> list[dict]:
+    """
+    קריאה גולמית ל-Open-Meteo Geocoding — מחזירה עד `count` מועמדים גולמיים.
+
+    language קובע באיזו שפה יחזרו שם העיר והמדינה (2026-10-08). זה משנה
+    יותר מהתצוגה: התאמת ציון-המדינה ב-geocode_city משווה את מה שהמשתמש
+    הקליד מול country שחזר, אז "San Jose Costa Rica" לא יתאים אף פעם
+    ל"קוסטה ריקה".
+    """
     response = client.get(
         GEOCODING_URL,
-        params={"name": name, "count": count, "language": "he", "format": "json"},
+        params={"name": name, "count": count, "language": language, "format": "json"},
         timeout=10.0,
     )
     response.raise_for_status()
@@ -292,7 +313,7 @@ def _text_matches(hint: str, value: str | None) -> bool:
     return bool(hint_n) and (hint_n in value_n or value_n in hint_n)
 
 
-def _nominatim_forward_geocode(client: httpx.Client, city_name: str) -> dict:
+def _nominatim_forward_geocode(client: httpx.Client, city_name: str, language: str = "he") -> dict:
     """
     שכבת גיבוי ל-geocode_city (למטה) — נקראת רק אחרי ש-Open-Meteo/
     GeoNames נכשל לגמרי (גם התאמה ישירה וגם כל פיצול עיר/מדינה). מריצה
@@ -306,7 +327,7 @@ def _nominatim_forward_geocode(client: httpx.Client, city_name: str) -> dict:
     """
     response = client.get(
         NOMINATIM_SEARCH_URL,
-        params={"q": city_name, "format": "json", "accept-language": "he", "limit": 1, "addressdetails": 1},
+        params={"q": city_name, "format": "json", "accept-language": language, "limit": 1, "addressdetails": 1},
         headers={"User-Agent": NOMINATIM_USER_AGENT},
         timeout=10.0,
     )
@@ -335,7 +356,7 @@ def _nominatim_forward_geocode(client: httpx.Client, city_name: str) -> dict:
     return {"found": True, "name": name, "country": address.get("country"), "latitude": latitude, "longitude": longitude}
 
 
-def geocode_city(client: httpx.Client, city_name: str) -> dict:
+def geocode_city(client: httpx.Client, city_name: str, language: str = "he") -> dict:
     """
     מזהה עיר לפי שם חופשי. קודם מנסים את המחרוזת המלאה כמו שהיא — המקרה
     השכיח, שם עיר יחיד כמו "תל אביב". אם זה נכשל וישנן כמה מילים, כנראה
@@ -362,7 +383,7 @@ def geocode_city(client: httpx.Client, city_name: str) -> dict:
     ה-@mcp.tool() המקביל ב-mcp_weather_server.py. מאז האיחוד, גם ה-Agent
     Loop (send_uv_report.py) מקבל את אותן שלוש השכבות.
     """
-    results = _raw_geocode_search(client, city_name, count=1)
+    results = _raw_geocode_search(client, city_name, count=1, language=language)
     if results:
         return {"found": True, **results[0]}
 
@@ -372,12 +393,12 @@ def geocode_city(client: httpx.Client, city_name: str) -> dict:
             break
         city_part = " ".join(tokens[:-suffix_len])
         country_hint = " ".join(tokens[-suffix_len:])
-        candidates = _raw_geocode_search(client, city_part, count=10)
+        candidates = _raw_geocode_search(client, city_part, count=10, language=language)
         match = next((c for c in candidates if _text_matches(country_hint, c.get("country"))), None)
         if match:
             return {"found": True, **match}
 
-    return _nominatim_forward_geocode(client, city_name)
+    return _nominatim_forward_geocode(client, city_name, language)
 
 
 # ---------------------------------------------------------------------
