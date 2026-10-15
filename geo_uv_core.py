@@ -524,6 +524,9 @@ def fetch_current_weather(client: httpx.Client, lat: float, lon: float) -> dict:
     UV + טמפ' + עננות + לחות יחסית נוכחיים —
     {"uv_index", "temperature_2m", "cloud_cover", "relative_humidity_2m"}.
 
+    **"time" חוזר בשעון המקומי של המיקום** (timezone=auto), ולצידו
+    "timezone", "timezone_abbreviation" ו-"utc_offset_seconds".
+
     2026-09-12: הוספת relative_humidity_2m — משתמש שאל את הבוט "לחות?"
     דרך ה-Agent Loop, וזה קיבל תשובה שמתעלמת מהשאלה (חוזרת על UV/טמפ'/
     עננות בלבד) כי הכלי פשוט לא שלף לחות מ-Open-Meteo מעולם, למרות
@@ -538,8 +541,28 @@ def fetch_current_weather(client: httpx.Client, lat: float, lon: float) -> dict:
             "latitude": lat,
             "longitude": lon,
             "current": "uv_index,temperature_2m,cloud_cover,relative_humidity_2m",
+            # 2026-10-15: קודם לא היה כאן timezone בכלל, וברירת המחדל של
+            # Open-Meteo היא GMT. התוצאה: current["time"] חזר ב-UTC,
+            # וה-Agent Loop הדפיס אותו כאילו הוא השעון של המשתמש —
+            # שאלה ב-12:02 שעון ישראל נענתה "09:00". ראו גם
+            # get_uv_forecast ב-mcp_weather_server.py, שסבל מאותו דבר.
+            #
+            # שים לב ש-get_current_uv למעלה מבקשת "UTC" *במפורש* וזה
+            # נכון שם: _nearest_hourly_uv משווה מול datetime.now(utc).
+            # שתי הפונקציות נראות דומות ואסור לאחד להן את המוסכמה.
+            "timezone": "auto",
         },
         timeout=10.0,
     )
     response.raise_for_status()
-    return response.json()["current"]
+    body = response.json()
+    # הזמן חוזר עכשיו מקומי, ויחד איתו שם אזור הזמן וההיסט — כדי שהשעה
+    # תתאר את עצמה. הצרכן היחיד כאן הוא ה-Agent Loop, ולמודל אין שום
+    # דרך לדעת לבד אם מספר ערום הוא UTC או מקומי; הלקח הזה כבר נלמד
+    # פעם אחת בתאריכים (ראו לוח העוגנים ב-_build_freeform_task).
+    return {
+        **body["current"],
+        "timezone": body.get("timezone"),
+        "timezone_abbreviation": body.get("timezone_abbreviation"),
+        "utc_offset_seconds": body.get("utc_offset_seconds"),
+    }

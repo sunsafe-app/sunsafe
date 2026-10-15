@@ -228,6 +228,10 @@ async def get_uv_forecast(lat: float, lon: float, days: int = 3) -> dict:
     Return an hourly UV Index forecast for the next N days (default: 3) for a
     given geographic location. Useful for planning exposure ahead of time, not
     just for the current conditions.
+
+    All times are in the **local time of that location**, not UTC. The
+    "timezone" and "utc_offset_seconds" fields name which zone, so state
+    the hour as-is and never shift it yourself.
     """
     logger.info("get_uv_forecast(lat=%s, lon=%s, days=%s)", lat, lon, days)
     async with httpx.AsyncClient() as client:
@@ -238,11 +242,22 @@ async def get_uv_forecast(lat: float, lon: float, days: int = 3) -> dict:
                 "longitude": lon,
                 "hourly": "uv_index",
                 "forecast_days": days,
+                # 2026-10-15: היה חסר, וברירת המחדל של Open-Meteo היא GMT —
+                # כלומר peak_hour חזר ב-UTC והוצג כשעון מקומי. אותו באג
+                # בדיוק כמו ב-fetch_current_weather, רק שכאן הוא עוד לא
+                # נשאל בפועל. get_historical_uv למטה כבר היה על "auto".
+                "timezone": "auto",
             },
             timeout=10.0,
         )
         response.raise_for_status()
-        return response.json()["hourly"]
+        body = response.json()
+        return {
+            **body["hourly"],
+            "timezone": body.get("timezone"),
+            "timezone_abbreviation": body.get("timezone_abbreviation"),
+            "utc_offset_seconds": body.get("utc_offset_seconds"),
+        }
 
 
 def _summarise_uv_day(hourly: dict, target: str) -> dict:
