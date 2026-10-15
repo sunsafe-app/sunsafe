@@ -415,3 +415,17 @@ test("normalizeLang: anything but 'en' is Hebrew", () => {
   assert.equal(normalizeLang("en"), "en");
   for (const v of ["he", undefined, null, "fr", 1]) assert.equal(normalizeLang(v), "he");
 });
+
+// ---------------------------------------------------------------------
+// כתיבים חלופיים (2026-10-13) — אותם מקרים כמו test_geocode_disambiguation.py
+// ---------------------------------------------------------------------
+import { spellingVariants } from "./logic.ts";
+
+test("spellingVariants matches the Python implementation", () => {
+  assert.deepEqual(spellingVariants("תל אביב"), []);
+  assert.deepEqual(spellingVariants("לוס אנג'לס"), ["לוס אנגלס"]);
+  assert.deepEqual(spellingVariants("לוס אנג׳לס"), ["לוס אנגלס"]);
+  assert.deepEqual(spellingVariants("תל-אביב"), ["תל אביב"]);
+  assert.deepEqual(spellingVariants("תל־אביב"), ["תל אביב"]);
+  assert.deepEqual(spellingVariants("לוס אנג'לס ארה״ב"), ["לוס אנגלס ארהב"]);
+});

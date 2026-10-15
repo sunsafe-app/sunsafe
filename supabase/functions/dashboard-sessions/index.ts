@@ -34,6 +34,7 @@ import {
   localizeMessage,
   normalizeLang,
   resolveSessionTimes,
+  spellingVariants,
   textMatches,
   utcIsoToLocalWallClock,
   validateRequest,
@@ -145,7 +146,14 @@ async function geocodeCity(cityName: string, lang = "he"): Promise<GeoResult | n
   const direct = await rawGeocodeSearch(cityName, 1, lang);
   if (direct.length > 0) return direct[0];
 
-  const tokens = cityName.trim().split(/\s+/);
+  // כתיבים חלופיים (בלי גרש / בלי מקף) — ראו spellingVariants ב-logic.ts.
+  const variants = spellingVariants(cityName);
+  for (const variant of variants) {
+    const found = await rawGeocodeSearch(variant, 1, lang);
+    if (found.length > 0) return found[0];
+  }
+
+  const tokens = (variants.length ? variants[variants.length - 1] : cityName).trim().split(/\s+/);
   for (const suffixLen of [1, 2, 3]) {
     if (tokens.length <= suffixLen) break;
     const cityPart = tokens.slice(0, -suffixLen).join(" ");

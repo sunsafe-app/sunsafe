@@ -21,6 +21,7 @@ Desktop, לבדיקה ידנית) בלי צורך בכל הסודות שהבוט
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -356,6 +357,33 @@ def _nominatim_forward_geocode(client: httpx.Client, city_name: str, language: s
     return {"found": True, "name": name, "country": address.get("country"), "latitude": latitude, "longitude": longitude}
 
 
+# גרש/גרשיים וכל מה שמשתמשים מקלידים במקומם: ' ׳ ' ' ` " ״
+_SPELLING_MARKS_RE = re.compile("['׳‘’`\"״]")
+# מקף רגיל, מקף עברי (מקאף), ומקפים טיפוגרפיים
+_HYPHENS_RE = re.compile("[-־‐‑–]")
+
+
+def spelling_variants(city_name: str) -> list[str]:
+    """
+    כתיבים חלופיים לשם עיר, לניסיון חוזר כשהחיפוש המקורי נכשל (2026-10-13).
+
+    GeoNames מחזיק כתיב עברי אחד לכל עיר, ו-Open-Meteo מתאים אותו בדיוק.
+    בפועל: "לוס אנג'לס" (עם גרש — הכתיב הנפוץ) לא נמצא, כי ב-GeoNames
+    העיר רשומה "לוס אנגלס"; "תל-אביב" לא נמצא, "תל אביב" כן. מחזירה בלי
+    גרש, בלי מקף, ובלי שניהם — בלי כפילויות ובלי השם המקורי.
+    """
+    base = city_name.strip()
+    squash = lambda s: re.sub(r"\s+", " ", s).strip()
+    no_marks = squash(_SPELLING_MARKS_RE.sub("", base))
+    no_hyphens = squash(_HYPHENS_RE.sub(" ", base))
+    neither = squash(_HYPHENS_RE.sub(" ", no_marks))
+    out: list[str] = []
+    for variant in (no_marks, no_hyphens, neither):
+        if variant and variant != base and variant not in out:
+            out.append(variant)
+    return out
+
+
 def geocode_city(client: httpx.Client, city_name: str, language: str = "he") -> dict:
     """
     מזהה עיר לפי שם חופשי. קודם מנסים את המחרוזת המלאה כמו שהיא — המקרה
@@ -387,7 +415,16 @@ def geocode_city(client: httpx.Client, city_name: str, language: str = "he") -> 
     if results:
         return {"found": True, **results[0]}
 
-    tokens = city_name.strip().split()
+    # שכבה 1b: אותו חיפוש בכתיבים חלופיים (בלי גרש / בלי מקף).
+    variants = spelling_variants(city_name)
+    for variant in variants:
+        results = _raw_geocode_search(client, variant, count=1, language=language)
+        if results:
+            return {"found": True, **results[0]}
+
+    # הפיצול עובד על הכתיב המנורמל ("לוס אנג'לס ארה״ב" -> "לוס אנגלס ארהב").
+    # התאמת המדינה ממילא מתעלמת מגרשיים ומקפים (_text_matches).
+    tokens = (variants[-1] if variants else city_name).strip().split()
     for suffix_len in (1, 2, 3):
         if len(tokens) <= suffix_len:
             break

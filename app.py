@@ -3,7 +3,8 @@ SunSafe — Hugging Face Space entry point
 ------------------------------------------
 עוטף את bot_commands.py (ה-listener האמיתי, polling מול Telegram) בתוך
 אפליקציית Gradio מינימלית, כדי שהקוד ירוץ 24/7 על Hugging Face Spaces
-(CPU Basic, חינמי) במקום להיות תלוי שהמחשב של המשתמש דלוק. ראו
+(על חומרת ZeroGPU — ראו "ZeroGPU compliance probe" למטה) במקום להיות
+תלוי שהמחשב של המשתמש דלוק. ראו
 docs/2026-08-27-hf-spaces-hosting-design.md לרציונל המלא.
 
 ה-Gradio UI עצמו לא עושה שום דבר פונקציונלי — הוא קיים רק כי Spaces

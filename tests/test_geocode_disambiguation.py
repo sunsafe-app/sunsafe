@@ -62,6 +62,18 @@ OPEN_METEO_CANNED = {
     ("סן חוסה קוסטה ריקה", 1): [],
     ("סן חוסה קוסטה", 10): [],
     ("סן חוסה", 10): [],
+    # 2026-10-13: GeoNames מכיר "לוס אנגלס" בלבד (בלי גרש) ו"תל אביב" בלבד (בלי מקף)
+    ("לוס אנג'לס", 1): [],
+    ("לוס אנג׳לס", 1): [],
+    ("לוס אנגלס", 1): [
+        {"name": "לוס אנגלס", "country": "ארה״ב", "latitude": 34.05, "longitude": -118.24},
+    ],
+    ("תל-אביב", 1): [],
+    ("לוס אנג'לס ארה״ב", 1): [],
+    ("לוס אנגלס ארהב", 1): [],
+    ("לוס אנגלס", 10): [
+        {"name": "לוס אנגלס", "country": "ארה״ב", "latitude": 34.05, "longitude": -118.24},
+    ],
 }
 
 # q (חיפוש טקסט-חופשי) -> תשובת Nominatim גולמית (list, לא dict-עם-results)
@@ -149,6 +161,29 @@ class BadLatLonClient:
 geo_bad = bc._nominatim_forward_geocode(BadLatLonClient(), "משהו")
 check("_nominatim_forward_geocode: invalid lat/lon -> found=False, no crash", geo_bad == {"found": False}, f"-> {geo_bad}")
 
+# 8) כתיבים חלופיים (2026-10-13): גרש ומקף
+for typed in ("לוס אנג'לס", "לוס אנג׳לס"):
+    client = FakeClient()
+    geo = bc.geocode_city(client, typed)
+    check(f"geresh variant {typed!r} -> found Los Angeles", geo.get("found") and geo.get("name") == "לוס אנגלס", f"-> {geo}")
+    check(f"...without reaching Nominatim", not any(c[0] == "nominatim" for c in client.calls), f"-> {client.calls}")
+
+client = FakeClient()
+geo = bc.geocode_city(client, "תל-אביב")
+check("hyphen variant 'תל-אביב' -> found Tel Aviv", geo.get("found") and geo.get("name") == "תל אביב", f"-> {geo}")
+
+client = FakeClient()
+geo = bc.geocode_city(client, "לוס אנג'לס ארה״ב")
+check("geresh + country hint -> found via the split on the normalised name",
+      geo.get("found") and geo.get("country") == "ארה״ב", f"-> {geo}")
+
+from geo_uv_core import spelling_variants
+check("spelling_variants: plain name has no variants", spelling_variants("תל אביב") == [])
+check("spelling_variants: geresh removed", spelling_variants("לוס אנג'לס") == ["לוס אנגלס"])
+check("spelling_variants: hyphen -> space", spelling_variants("תל-אביב") == ["תל אביב"])
+check("spelling_variants: Hebrew maqaf too", spelling_variants("תל־אביב") == ["תל אביב"])
+
+# הבדיקה הישירה (1) נשארת קריאה אחת בלבד — הכתיבים החלופיים רק אחרי כישלון
 # 7) _text_matches — כיוון הכלה דו-צדדי, בלי תלות במקפים/גרשיים
 check("_text_matches: exact", bc._text_matches("קוסטה ריקה", "קוסטה ריקה") is True)
 check("_text_matches: hint contained in value", bc._text_matches("ריקה", "קוסטה ריקה") is True)

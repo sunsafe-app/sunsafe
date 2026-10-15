@@ -419,3 +419,24 @@ export function normalizeLang(lang: unknown): Lang {
 export function localizeMessage(message: string, lang: unknown): string {
   return normalizeLang(lang) === "en" ? (MESSAGES_EN[message] ?? message) : message;
 }
+
+// -----------------------------------------------------------------------
+// כתיבים חלופיים לשם עיר (2026-10-13) — זהה ל-spelling_variants ב-geo_uv_core.py
+// -----------------------------------------------------------------------
+// GeoNames מחזיק כתיב עברי אחד לכל עיר: "לוס אנג'לס" (עם גרש) לא נמצא כי
+// העיר רשומה "לוס אנגלס"; "תל-אביב" לא נמצא, "תל אביב" כן.
+const SPELLING_MARKS_RE = /['׳‘’`"״]/g;
+const HYPHENS_RE = /[-־‐‑–]/g;
+
+export function spellingVariants(cityName: string): string[] {
+  const base = cityName.trim();
+  const squash = (s: string) => s.replace(/\s+/g, " ").trim();
+  const noMarks = squash(base.replace(SPELLING_MARKS_RE, ""));
+  const noHyphens = squash(base.replace(HYPHENS_RE, " "));
+  const neither = squash(noMarks.replace(HYPHENS_RE, " "));
+  const out: string[] = [];
+  for (const v of [noMarks, noHyphens, neither]) {
+    if (v && v !== base && !out.includes(v)) out.push(v);
+  }
+  return out;
+}
