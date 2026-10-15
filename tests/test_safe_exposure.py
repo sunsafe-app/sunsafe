@@ -17,6 +17,7 @@
 5. ההודעות עצמן, מקצה לקצה, באמת מכילות את השורה.
 """
 import os
+import re
 import sys
 from unittest.mock import patch
 
@@ -35,6 +36,14 @@ def check(name, condition, detail=""):
     print(f"[{status}] {name} {detail}")
     if not condition:
         FAILURES.append(name)
+
+
+# 15.10.2026: הודעות התוצאה נשלחות עם parse_mode="HTML" (bold על הנתונים
+# + אמוג'י, הערת סקירה). הבדיקות כאן אומרות משהו על *התוכן*, לא על הסימון,
+# אז הן משוות מול הטקסט בלי התגיות — אחרת כל שינוי עיצובי שובר אותן.
+def plain(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", text or "")
+
 
 
 # ---------------------------------------------------------------------
@@ -175,9 +184,13 @@ with patch.object(bc, "send_message", fake_send_message), \
     bc._begin_session(670212669, "omri", "ירוחם", "Israel", 6.3, 30.99, 34.93)
 
 check("/start_session message includes the time-in-sun line",
-      sent and "32 דקות בשמש ישירה" in sent[0], f"-> {sent}")
+      sent and "32 דקות בשמש ישירה" in plain(sent[0]), f"-> {sent}")
 check("/start_session shows the UV on its own line",
-      sent and "UV נוכחי: 6.3" in sent[0], f"-> {sent}")
+      sent and "מדד UV כרגע: 6.3" in plain(sent[0]), f"-> {sent}")
+check("/start_session bolds the figures the user acts on",
+      sent and "<b>6.3</b>" in sent[0] and "<b>כ-32 דקות</b>" in sent[0], f"-> {sent}")
+check("/start_session leaves every tag closed",
+      sent and sent[0].count("<b>") == sent[0].count("</b>"), f"-> {sent}")
 check("/start_session still tells the user how to end the session",
       sent and "/end_session" in sent[0])
 
@@ -189,7 +202,7 @@ with patch.object(bc, "send_message", fake_send_message), \
     sent.clear()
     bc._begin_session(1, "nobody", "ירוחם", None, 6.3, 30.99, 34.93)
 check("no stored skin type -> confirmation still sent, just without the line",
-      sent and "התחלת session" in sent[0] and "בשמש ישירה" not in sent[0], f"-> {sent}")
+      sent and "התחלת מעקב" in plain(sent[0]) and "בשמש ישירה" not in plain(sent[0]), f"-> {sent}")
 
 # כשל ב-DB בשליפת סוג העור לא מפיל את האישור
 with patch.object(bc, "send_message", fake_send_message), \
@@ -203,7 +216,7 @@ with patch.object(bc, "send_message", fake_send_message), \
     except Exception:
         crashed = True
 check("a DB failure while fetching skin type does not break /start_session",
-      not crashed and sent and "התחלת session" in sent[0], f"-> crashed={crashed}, {sent}")
+      not crashed and sent and "התחלת מעקב" in plain(sent[0]), f"-> crashed={crashed}, {sent}")
 
 print()
 if FAILURES:

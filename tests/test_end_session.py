@@ -39,7 +39,7 @@ sent_messages = []
 updated = []  # [(table, params, patch)]
 
 
-def fake_send_message(chat_id, text, reply_markup=None):
+def fake_send_message(chat_id, text, reply_markup=None, **kwargs):
     sent_messages.append(text)
 
 

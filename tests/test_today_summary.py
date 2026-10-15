@@ -86,7 +86,7 @@ check("_daily_session_summary: hypothetical is much lower than actual (SPF30 pro
 sent_messages = []
 
 
-def fake_send_message(chat_id, text, reply_markup=None):
+def fake_send_message(chat_id, text, reply_markup=None, **kwargs):
     sent_messages.append(text)
 
 
@@ -572,11 +572,11 @@ with patch.object(bc, "send_message", fake_send_message), \
 admin_sent = []
 
 
-def fake_send_message_capture(chat_id, text, reply_markup=None):
+def fake_send_message_capture(chat_id, text, reply_markup=None, **kwargs):
     admin_sent.append((chat_id, text))
 
 
-def fake_send_message_raises(chat_id, text, reply_markup=None):
+def fake_send_message_raises(chat_id, text, reply_markup=None, **kwargs):
     raise RuntimeError("Telegram API down")
 
 

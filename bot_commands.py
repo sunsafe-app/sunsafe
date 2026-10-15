@@ -18,6 +18,7 @@ SDK נוסף, עקבי עם שאר הקוד.
 """
 
 import functools
+import html
 import inspect
 import io
 import json
@@ -218,10 +219,31 @@ def reverse_geocode_location(client: httpx.Client, lat: float, lon: float) -> di
 # ---------------------------------------------------------------------
 # Telegram
 # ---------------------------------------------------------------------
-def send_message(chat_id: int, text: str, reply_markup: dict | None = None) -> None:
+def send_message(
+    chat_id: int,
+    text: str,
+    reply_markup: dict | None = None,
+    parse_mode: str | None = None,
+) -> None:
+    """
+    parse_mode נוסף 15.10.2026 (הערת סקירה של רז חדס: להדגיש את הנתונים
+    שהאפליקציה נותנת). **ברירת המחדל היא None בכוונה** — טלגרם מפרש את
+    כל ההודעה לפי המצב הזה, וטקסט חופשי שמגיע מ-Gemini או שם עיר עם
+    תו מיוחד היה נשבר. מפעילים אותו רק על ההודעות הדטרמיניסטיות, ושם
+    מעבירים כל ערך משתנה דרך html.escape.
+
+    quote=False בכוונה בכל הקריאות ל-html.escape: טלגרם דורש רק
+    &amp;, &lt; ו-&gt;, וברירת המחדל הייתה הופכת גם גרש בשם עיר
+    ("לוס אנג'לס") ל-&#x27; — תו שהמשתמש היה רואה.
+
+    HTML ולא Markdown: שם רק &lt;, &gt; ו-&amp; דורשים escaping, בעוד
+    ש-Markdown של טלגרם נשבר גם על _ ו-* שמופיעים בשמות ובטקסט רגיל.
+    """
     payload = {"chat_id": chat_id, "text": text}
     if reply_markup is not None:
         payload["reply_markup"] = reply_markup
+    if parse_mode is not None:
+        payload["parse_mode"] = parse_mode
     with httpx.Client() as client:
         response = client.post(
             f"{TELEGRAM_API}/sendMessage",
@@ -373,21 +395,21 @@ def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
     shelf = spf_on_shelf(spf_needed_for(uv_index, skin_type, SUNSCREEN_HORIZON_MINUTES))
     if shelf == 0:
         spf_part = L(
-            "בשמש הזו לא תצטרכו קרם הגנה לשעתיים הקרובות.",
-            "In this sun you won't need sunscreen for the next two hours.",
+            "🧴 בשמש הזו <b>לא תצטרכו</b> קרם הגנה לשעתיים הקרובות.",
+            "🧴 In this sun you <b>won't need</b> sunscreen for the next two hours.",
         )
     elif shelf is None:
         # לא נדרך בטווח של שעתיים — ראו ההערה ב-spf_on_shelf.
         spf_part = L(
-            "בשמש הזו קרם הגנה לבדו לא יכסה שעתיים עבור סוג העור שלכם.\n"
+            "🧴 בשמש הזו קרם הגנה <b>לבדו לא יכסה שעתיים</b> עבור סוג העור שלכם.\n"
             "צל, כובע וחולצה — או לחזור בשעה מתקדמת יותר.",
-            "In this sun, sunscreen alone won't cover two hours for your skin type.\n"
+            "🧴 In this sun, sunscreen <b>alone won't cover two hours</b> for your skin type.\n"
             "Shade, a hat and a shirt — or come back later in the day.",
         )
     else:
         spf_part = L(
-            f"לשעתיים בשמש תצטרכו SPF {shelf}, ולמרוח מחדש בתום השעתיים.",
-            f"For two hours in the sun you'll need SPF {shelf}, and reapply after two hours.",
+            f"🧴 לשעתיים בשמש תצטרכו <b>SPF {shelf}</b>, ולמרוח מחדש בתום השעתיים.",
+            f"🧴 For two hours in the sun you'll need <b>SPF {shelf}</b>, and reapply after two hours.",
         )
 
     # **תקרת השעתיים חלה גם על המספר החשוף** (16.9.2026). היא הוחלה
@@ -401,10 +423,13 @@ def safe_exposure_line(uv_index: float, skin_type: int) -> str | None:
         L("יותר משעתיים", "more than two hours")
         if bare > SUNSCREEN_HORIZON_MINUTES else format_duration_he(bare)
     )
+    # ההודעה הזו נשלחת עם parse_mode="HTML" (ראו handle_start_session,
+    # הקורא היחיד). אין כאן שום ערך מהמשתמש — bare_part ו-shelf מחושבים
+    # מהנוסחה — ולכן אין מה לברוח ממנו.
     return L(
-        f"לפי סוג העור שלכם, {bare_part} בשמש ישירה "
+        f"⏱️ לפי סוג העור שלכם, <b>{bare_part}</b> בשמש ישירה "
         "עד סיכון לכוויה ללא קרם הגנה.\n",
-        f"For your skin type: {bare_part} in direct sun "
+        f"⏱️ For your skin type: <b>{bare_part}</b> in direct sun "
         "before you risk a burn without sunscreen.\n",
     ) + spf_part
 
@@ -889,9 +914,18 @@ def handle_start(chat_id: int, username: str, args: str, lang: str | None = None
     מ-2026-09-14 דו-לשוני (ראו i18n.py): lang מגיע מ-language_code של
     ההודעה הנכנסת דרך ה-dispatch ב-handle_update.
     """
-    # כפתורי השפה על הודעת הפתיחה עצמה: הניחוש הראשון (language_code של
-    # הלקוח) יכול לטעות — ישראלי עם טלגרם באנגלית — ולחיצה אחת מתקנת.
-    send_message(chat_id, t("welcome", lang), reply_markup=_language_keyboard(from_start=True))
+    # 2026-10-15: כפתורי השפה ירדו מכאן (הערת סקירה של רז חדס). שתי
+    # בעיות היו להם. הראשונה: הם הגיעו באותה נשימה עם בורר גוון העור,
+    # אז שתי שאלות קפצו בבת אחת ואי אפשר היה לענות על הראשונה לפני
+    # שהשנייה הופיעה. השנייה: לחיצה עליהם קראה ל-handle_start מחדש,
+    # כלומר *כל* ה-onboarding נשלח שוב — משתמשת חיצונית קיבלה שלוש
+    # הודעות פתיחה ושלושה בוררים (לוג 15.10).
+    #
+    # אין בהם צורך: i18n.resolve_user_language כבר קובעת שפה בשלוש
+    # דרכים בלי לשאול — language_code של טלגרם כניחוש פתיחה למשתמש
+    # חדש, החלפה אוטומטית ברגע שהמשתמש כותב מילה בשפה אחרת, ו-/language
+    # למי שרוצה במפורש. נשארה שאלה אחת ב-onboarding: גוון העור.
+    send_message(chat_id, t("welcome", lang))
 
     keyboard = _skin_type_keyboard(lang)
     image_bytes = _load_fitzpatrick_scale_image()
@@ -939,17 +973,11 @@ LANG_CALLBACK_PREFIX = "lang:"
 _user_language_cache: dict[str, str | None] = {}
 
 
-# סיומת לכפתורים שעל הודעת הפתיחה: לחיצה שם שולחת את כל ה-onboarding
-# מחדש בשפה החדשה (ברכה, סולם, כפתורי סוג עור), ולא רק אישור.
-LANG_FROM_START_SUFFIX = ":start"
-
-
-def _language_keyboard(from_start: bool = False) -> dict:
+def _language_keyboard() -> dict:
     """תמיד שני הכפתורים, כל אחד בשפה שלו — מי שלא קורא את השפה הנוכחית עדיין מזהה את שלו."""
-    suffix = LANG_FROM_START_SUFFIX if from_start else ""
     return {"inline_keyboard": [[
-        {"text": "🇮🇱 עברית", "callback_data": f"{LANG_CALLBACK_PREFIX}he{suffix}"},
-        {"text": "🇬🇧 English", "callback_data": f"{LANG_CALLBACK_PREFIX}en{suffix}"},
+        {"text": "🇮🇱 עברית", "callback_data": f"{LANG_CALLBACK_PREFIX}he"},
+        {"text": "🇬🇧 English", "callback_data": f"{LANG_CALLBACK_PREFIX}en"},
     ]]}
 
 
@@ -1778,8 +1806,10 @@ def _begin_session(
     send_message(
         chat_id,
         L(
-            f"התחלת session ב{location_label} ☀️\nUV נוכחי: {uv_index:.1f}\n\n",
-            f"Session started in {location_label} ☀️\nCurrent UV: {uv_index:.1f}\n\n",
+            f"☀️ התחלת מעקב ב{html.escape(location_label, quote=False)}\n"
+            f"מדד UV כרגע: <b>{uv_index:.1f}</b>\n\n",
+            f"☀️ Session started in {html.escape(location_label, quote=False)}\n"
+            f"Current UV: <b>{uv_index:.1f}</b>\n\n",
         )
         + (f"{exposure_line}\n\n" if exposure_line else "")
         + L(
@@ -1789,6 +1819,7 @@ def _begin_session(
             "If you used sunscreen, add its SPF number:\n/end_session 50",
         ),
         reply_markup={"remove_keyboard": True} if clear_keyboard else None,
+        parse_mode="HTML",
     )
     logger.info("Started session for @%s in %s (UV=%s)", username, city_name, uv_index)
     send_uv_forecast_chart(chat_id, city_name, lat, lon, now)
@@ -2051,14 +2082,18 @@ def handle_end_session(chat_id: int, username: str, args: str) -> None:
     send_message(
         chat_id,
         L(
-            f"{round(duration_minutes)} דקות ב{session['city']}.",
-            f"{round(duration_minutes)} min in {session['city']}.",
+            f"🏁 <b>{round(duration_minutes)} דקות</b> ב{html.escape(str(session['city']), quote=False)}",
+            f"🏁 <b>{round(duration_minutes)} min</b> in {html.escape(str(session['city']), quote=False)}",
         )
-        + f"{daily_part}\n"
+        # daily_part מגיע מ-daily_summary ב-geo_uv_core, שה-Worker משכפל
+        # מול fixture משותף — אסור להכניס לשם תגיות, אז הוא עובר כמו
+        # שהוא (סרגל האמוג\'י כבר מודגש ויזואלית בלי bold).
+        + f"{html.escape(daily_part, quote=False)}\n"
         + L(
-            "כדי לראות את הנתונים באזור האישי — לחצו\n/dashboard",
-            "To see it in your personal dashboard, tap\n/dashboard",
+            "📊 לנתונים המלאים באזור האישי — לחצו\n/dashboard",
+            "📊 For the full picture in your dashboard, tap\n/dashboard",
         ),
+        parse_mode="HTML",
     )
     logger.info("Ended session id=%s for @%s: score=%s", session["id"], username, score)
 
@@ -2769,7 +2804,8 @@ def _build_freeform_task(user_text: str, lang: str | None = None) -> str:
         "הזמינים לך, ובמספר הקריאות הקטן ביותר. לשאלה על *עכשיו* "
         "קרא ל-get_weather_for_city עם שם העיר: הוא מחזיר UV, "
         "טמפרטורה, עננות ולחות בקריאה אחת, ואין צורך ב-geocode_city "
-        "לפניו. לתחזית ולעבר כן צריך geocode_city קודם (אסור לנחש "
+        "לפניו. ציין בתשובה גם את השעה מהשדה time — היא כבר בשעון "
+        "המקומי של אותו מקום, אל תמיר אותה ואל תוסיף אזור זמן. לתחזית ולעבר כן צריך geocode_city קודם (אסור לנחש "
         "קואורדינטות מידע כללי), ואחריו get_uv_forecast "
         "לימים הבאים, או get_historical_uv לכל תאריך שכבר עבר — כולל "
         "אתמול, החודש שעבר או לפני שנה. אם get_historical_uv מחזיר "
@@ -2931,23 +2967,15 @@ def handle_callback_query(callback_query: dict) -> None:
         return
 
     if data.startswith(LANG_CALLBACK_PREFIX):
-        raw_lang = data[len(LANG_CALLBACK_PREFIX):]
-        from_start = raw_lang.endswith(LANG_FROM_START_SUFFIX)
-        chosen = i18n.normalize_language(raw_lang.removesuffix(LANG_FROM_START_SUFFIX))
+        chosen = i18n.normalize_language(data[len(LANG_CALLBACK_PREFIX):])
         answer_callback_query(query_id)
-        if chosen and from_start:
-            # נלחץ על הודעת הפתיחה: כל מה שמתחתיה (סולם, כפתורי סוג עור)
-            # נשלח בשפה הקודמת. אישור לבד השאיר את המשתמש מול onboarding
-            # בשפה שהוא הרגע אמר שהוא לא רוצה (תקלה 8.10, צילום מסך).
-            set_lang(chosen)
-            _remember_language(username, chosen)
-            handle_start(chat_id, username, "", lang=chosen)
-            logger.info("Language set to %s for @%s from /start — onboarding re-sent", chosen, username)
-            return
         if chosen:
+            # _apply_language_choice עושה set_lang + זיכרון + אישור.
             _apply_language_choice(chat_id, username, chosen)
-            # מי שלחץ על השפה בהודעת הפתיחה עוד לא בחר סוג עור —
-            # שולחים לו את השאלה שוב, הפעם בשפה שבחר.
+            # 2026-10-15: מסלול ה-":start" הוסר יחד עם כפתורי השפה
+            # מהודעת הפתיחה — הוא זה ששלח את כל ה-onboarding מחדש.
+            # מה שנשאר מגיע רק מ-/language, ושם מי שעוד לא בחר גוון עור
+            # אכן צריך את השאלה שוב, בשפה החדשה.
             if not select_rows("users", {"telegram_username": f"eq.{username}"}):
                 send_message(chat_id, t("skin_question"), reply_markup=_skin_type_keyboard())
         return

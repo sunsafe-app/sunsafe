@@ -14,6 +14,7 @@ sessions — _peak_exposure_session בבוט, dayScoreOf בדשבורד. זו ה
 import os
 os.environ.setdefault("BOT_TOKEN", "TEST_TOKEN")
 
+import re
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -32,6 +33,14 @@ def check(name, condition, detail=""):
     print(f"[{'OK' if condition else 'FAIL'}] {name} {detail}")
     if not condition:
         FAILURES.append(name)
+
+
+# 15.10.2026: הודעות התוצאה נשלחות עם parse_mode="HTML" (bold על הנתונים
+# + אמוג'י, הערת סקירה). הבדיקות כאן אומרות משהו על *התוכן*, לא על הסימון,
+# אז הן משוות מול הטקסט בלי התגיות — אחרת כל שינוי עיצובי שובר אותן.
+def plain(text: str) -> str:
+    return re.sub(r"<[^>]+>", "", text or "")
+
 
 
 # ---------------------------------------------------------------------
@@ -163,7 +172,14 @@ check("והצבירה היא סכום: 40+35+30 = 105", "105%" in text, f"-> {te
 check("ובלי מספר sessions", "sessions" not in text)
 check("כלומר עברה את 100 -> כולה אדומה", "🟥" * 10 in text)
 check("ולא נוספה שורת פרשנות", "בטווח" not in text and "חשיפה מלאה" not in text)
-check("עדיין מופיעה התוצאה של ה-session עצמו", "דקות בחיפה" in text)
+check("עדיין מופיעה התוצאה של ה-session עצמו", "דקות בחיפה" in plain(text), f"-> {text!r}")
+check("ומשך ה-session מודגש", "<b>" in text and "</b>" in text, f"-> {text!r}")
+# הסרגל היומי מגיע מ-daily_summary ב-geo_uv_core, שה-Worker משכפל מול
+# fixture משותף. תגית שתיכנס לשם תפצל את השניים — ולכן ההדגשה מוגבלת
+# לשורה הראשונה, זו ש-bot_commands מרכיב בעצמו.
+bar_line = next((ln for ln in text.splitlines() if any(c in ln for c in "🟩🟨🟧🟥")), "")
+check("שורת הסרגל עצמה נטולת תגיות (משותפת עם ה-Worker)",
+      bar_line and "<" not in bar_line, f"-> {bar_line!r}")
 check("ושורת התקציב הוסרה", "מדד חשיפה:" not in text, f"-> {text!r}")
 check("וגם ההפניה לדשבורד", "/dashboard" in text)
 

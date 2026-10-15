@@ -90,7 +90,7 @@ check(
 messages = []
 photos = []
 
-with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))), \
+with patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))), \
      patch.object(bc, "send_photo", lambda cid, img, caption=None, reply_markup=None: photos.append((caption, reply_markup))), \
      patch.object(bc, "_load_fitzpatrick_scale_image", lambda: b"fake-png"):
     bc._pending_skin_type_pick.clear()
@@ -108,7 +108,7 @@ check("/start still arms the single-digit fallback", "gil612" in bc._pending_ski
 
 # בלי תמונה (assets חסר) — הכפתורים עדיין נשלחים
 messages.clear()
-with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))), \
+with patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))), \
      patch.object(bc, "_load_fitzpatrick_scale_image", lambda: None):
     bc.handle_start(123, "gil612", "")
 check(
@@ -125,7 +125,7 @@ messages.clear()
 
 with patch.object(bc, "upsert_row", lambda table, row, on_conflict=None: upserts.append((table, row))), \
      patch.object(bc, "answer_callback_query", lambda qid, text=None: answered.append((qid, text))), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))):
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))):
     bc._pending_skin_type_pick.clear()
     bc._mark_pending_skin_type_pick("gil612")
     bc.handle_callback_query(make_callback("skin:4"))
@@ -234,7 +234,7 @@ answered.clear()
 messages.clear()
 with patch.object(bc, "upsert_row", lambda *a, **k: upserts.append(a)), \
      patch.object(bc, "answer_callback_query", lambda qid, text=None: answered.append(qid)), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))):
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))):
     bc.handle_callback_query(make_callback("skin:photo"))
 
 check("tapping it explains how to take the photo", len(messages) == 1)
@@ -250,7 +250,7 @@ with patch.object(bc, "download_telegram_photo", lambda client, fid: b"img"), \
      patch.object(bc, "classify_skin_type_from_image", lambda b, **_k: {"skin_type": 3, "confidence": "medium", "reasoning": "גוון בינוני"}), \
      patch.object(bc, "validate_classification", lambda raw: {"ok": True, **raw}), \
      patch.object(bc, "_notify_admin_token_usage", lambda *a: None), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))):
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))):
     # httpx.Client() כן נוצר כאן, אבל download_telegram_photo ממוק
     # אז אין שום קריאת רשת בפועל.
     bc.handle_skin_type_photo(123, "gil612", "file-id")
@@ -272,14 +272,14 @@ check("there is also a way back to the full picker",
 messages.clear()
 answered.clear()
 with patch.object(bc, "answer_callback_query", lambda qid, text=None: answered.append(qid)), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))):
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))):
     bc.handle_callback_query(make_callback("skin:again"))
 check("'choose another' re-sends the full picker", messages and messages[0][1] == kb)
 
 # שערי "צריך סוג עור קודם" מציעים כפתורים ולא פקודה
 messages.clear()
 with patch.object(bc, "select_rows", lambda *a, **k: []), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append((text, reply_markup))):
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append((text, reply_markup))):
     allowed = bc._can_start_session(123, "newuser")
 check("the 'set a skin type first' gate blocks as before", allowed is False)
 check("...but offers the picker instead of a command to type",

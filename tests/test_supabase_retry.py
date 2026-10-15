@@ -135,7 +135,7 @@ check("insert_row is deliberately NOT retried (no duplicate rows)",
 # 6) המשתמש לא נשאר בשתיקה: מיקום + כשל Supabase -> הודעה
 # ---------------------------------------------------------------------
 messages = []
-with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append(text)), \
+with patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append(text)), \
      patch.object(bc, "update_rows"), \
      patch.object(bc, "_mirror_incoming_to_admin", lambda *a, **k: None), \
      patch.object(bc, "handle_start_session_location",
@@ -152,7 +152,7 @@ check("a Supabase failure on the location path answers the user",
 
 # אותו דבר בנתיב התמונה
 messages.clear()
-with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: messages.append(text)), \
+with patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: messages.append(text)), \
      patch.object(bc, "update_rows"), \
      patch.object(bc, "_mirror_incoming_to_admin", lambda *a, **k: None), \
      patch.object(bc, "handle_skin_type_photo",

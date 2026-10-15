@@ -46,7 +46,7 @@ offset_calls = []  # [(lat, lon)]
 OFFSET_IL = 10800  # +3h, כמו ישראל/IDT
 
 
-def fake_send_message(chat_id, text, reply_markup=None):
+def fake_send_message(chat_id, text, reply_markup=None, **kwargs):
     sent_messages.append(text)
 
 

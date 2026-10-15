@@ -148,7 +148,7 @@ def run_update(text, stored, client_lang="en", username="gil612", extra_patches=
     """מריץ handle_update אמיתי עם שפה שמורה מדומה. מחזיר (הודעות, תמונות, שפות שנשמרו)."""
     msgs, pics, saved = [], [], []
     bc._user_language_cache.clear()
-    with patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append((text, reply_markup))), \
+    with patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: msgs.append((text, reply_markup))), \
          patch.object(bc, "send_photo", lambda cid, img, caption=None, reply_markup=None: pics.append((caption, reply_markup))), \
          patch.object(bc, "_load_fitzpatrick_scale_image", lambda: b"png"), \
          patch.object(bc, "update_rows", lambda *a, **k: []), \
@@ -170,12 +170,19 @@ def run_update(text, stored, client_lang="en", username="gil612", extra_patches=
     return msgs, pics, saved
 
 
-# משתמש חדש עם טלגרם באנגלית -> פתיחה באנגלית, ועם כפתורי שפה לתיקון מהיר
+# משתמש חדש עם טלגרם באנגלית -> פתיחה באנגלית. 15.10.2026: **בלי כפתורי
+# שפה**. הם ירדו מהודעת הפתיחה (הערת סקירה של רז חדס): הם קפצו באותה
+# נשימה עם בורר גוון העור, כך ששתי שאלות הופיעו בבת אחת, ולחיצה עליהם
+# קראה ל-handle_start מחדש ושלחה את כל ה-onboarding שוב. הם מיותרים —
+# resolve_user_language כבר קובעת שפה מ-language_code, מחליפה לבד כשכותבים
+# בשפה אחרת, ו-/language קיים למי שרוצה במפורש.
 msgs, pics, saved = run_update("/start", stored=None, client_lang="en")
 check("a new English-client user gets the English welcome",
       msgs and msgs[0][0].startswith("☀️ Welcome to SunSafe"), f"-> {msgs[0][0][:30] if msgs else None}")
-lang_buttons = [b["callback_data"] for row in (msgs[0][1] or {}).get("inline_keyboard", []) for b in row] if msgs else []
-check("...with both language buttons on it", lang_buttons == ["lang:he:start", "lang:en:start"], f"-> {lang_buttons}")
+check("...with no language buttons on it", msgs and msgs[0][1] is None,
+      f"-> {msgs[0][1] if msgs else None}")
+check("...so onboarding asks exactly one thing: the skin type",
+      len(msgs) == 1 and len(pics) == 1, f"-> {len(msgs)} messages, {len(pics)} photos")
 labels = [b["text"] for row in pics[0][1]["inline_keyboard"] for b in row]
 check("...and English skin-type buttons", "3 · Medium" in labels, f"-> {labels[:3]}")
 check("...and the guess is remembered", saved == ["en"], f"-> {saved}")
@@ -208,7 +215,7 @@ check("...without calling the agent", not agent_calls)
 msgs, saved = [], []
 bc._user_language_cache.clear()
 with patch.object(bc, "answer_callback_query", lambda qid, text=None: None), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append(text)), \
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: msgs.append(text)), \
      patch.object(bc, "_stored_language", lambda u: "en"), \
      patch.object(bc, "_remember_language", lambda u, l: saved.append(l)), \
      patch.object(bc, "select_rows", lambda *a, **k: []):
@@ -222,29 +229,28 @@ check("...confirms in Hebrew", msgs and "בעברית" in msgs[0], f"-> {msgs[:1
 check("...and re-asks the skin type in Hebrew for a user who has none yet",
       len(msgs) == 2 and msgs[1] == "מה סוג העור שלכם?", f"-> {msgs[1:]}")
 
-# לחיצה על כפתור שפה *בהודעת הפתיחה* — ה-onboarding כולו נשלח מחדש בשפה
-# החדשה, גם למשתמש שכבר יש לו סוג עור (תקלה 8.10: קיבל רק אישור, והסולם
-# והכפתורים נשארו בעברית).
+# כפתור שפה מגיע עכשיו רק מ-/language. 15.10.2026: המסלול שהיה שולח את
+# כל ה-onboarding מחדש ("lang:en:start") הוסר יחד עם הכפתורים מהודעת
+# הפתיחה — הוא זה שגרם למשתמשת חיצונית לקבל שלוש הודעות פתיחה ושלושה
+# בוררי גוון עור (לוג 15.10). לחיצה שומרת שפה, מאשרת, ולא שולחת שוב כלום.
 msgs, pics, saved = [], [], []
 with patch.object(bc, "answer_callback_query", lambda qid, text=None: None), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append((text, reply_markup))), \
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: msgs.append((text, reply_markup))), \
      patch.object(bc, "send_photo", lambda cid, img, caption=None, reply_markup=None: pics.append((caption, reply_markup))), \
      patch.object(bc, "_load_fitzpatrick_scale_image", lambda: b"png"), \
      patch.object(bc, "_stored_language", lambda u: "he"), \
      patch.object(bc, "_remember_language", lambda u, l: saved.append(l)), \
      patch.object(bc, "select_rows", lambda *a, **k: [{"skin_type": 3}]):
     bc.handle_callback_query({
-        "id": "q1", "data": "lang:en:start",
+        "id": "q1", "data": "lang:en",
         "from": {"username": "gil612", "language_code": "he"},
         "message": {"chat": {"id": 123}, "text": "☀️ ברוכים הבאים ל-SunSafe!"},
     })
-check("the welcome-message English button saves English", saved == ["en"], f"-> {saved}")
-check("...and re-sends the welcome in English", msgs and msgs[0][0].startswith("☀️ Welcome to SunSafe"),
-      f"-> {msgs[0][0][:30] if msgs else None}")
-check("...and the skin-type picker in English",
-      pics and "3 · Medium" in [b["text"] for row in pics[0][1]["inline_keyboard"] for b in row])
-check("...with the language buttons still marked as coming from /start",
-      msgs and msgs[0][1]["inline_keyboard"][0][1]["callback_data"] == "lang:en:start")
+check("the /language English button saves English", saved == ["en"], f"-> {saved}")
+check("...and confirms in English", msgs and msgs[0][0].startswith("I'll talk to you in English"),
+      f"-> {msgs[0][0][:34] if msgs else None}")
+check("...and does NOT re-send the onboarding", len(msgs) == 1 and pics == [],
+      f"-> {len(msgs)} messages, {len(pics)} photos")
 
 # לחיצה על כפתור סוג עור — בשפה השמורה, לא בשפת ההודעה שהכפתור יושב עליה
 msgs = []
@@ -252,7 +258,7 @@ with patch.object(bc, "upsert_row", lambda *a, **k: None), \
      patch.object(bc, "answer_callback_query", lambda qid, text=None: None), \
      patch.object(bc, "_stored_language", lambda u: "he"), \
      patch.object(bc, "_remember_language", lambda u, l: None), \
-     patch.object(bc, "send_message", lambda cid, text, reply_markup=None: msgs.append(text)):
+     patch.object(bc, "send_message", lambda cid, text, reply_markup=None, **kw: msgs.append(text)):
     bc.handle_callback_query({
         "id": "q1", "data": "skin:4",
         "from": {"username": "gil612", "language_code": "en"},
