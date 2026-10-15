@@ -19,9 +19,11 @@ import json
 import logging
 import os
 import sys
+import time
 
 from dotenv import load_dotenv
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -136,6 +138,53 @@ def _parse_tool_result(result) -> object:
         return joined
 
 
+# שגיאות שרת זמניות מ-Gemini. 503 נצפה בפרודקשן ב-15.10 והפיל את
+# ההודעה החופשית הראשונה של המשתמשת החיצונית הראשונה — היא קיבלה
+# הודעת שגיאה גנרית בגלל כשל שחלף תוך שניות. 429 (מכסה), 500 ו-504
+# מאותה משפחה: כולם חולפים מעצמם.
+#
+# הגייטקיפר ידע לספוג את זה מההתחלה (fail open ל-VALID
+# ב-message_gatekeeper.py). דווקא המסלול היקר יותר נשאר חשוף.
+GEMINI_RETRY_CODES = frozenset({429, 500, 503, 504})
+AGENT_RETRY_ATTEMPTS = int(os.environ.get("AGENT_RETRY_ATTEMPTS", "3"))
+AGENT_RETRY_BASE_SECONDS = float(os.environ.get("AGENT_RETRY_BASE_SECONDS", "1.0"))
+
+
+def _send_with_retry(chat, message, purpose: str):
+    """
+    chat.send_message עם ניסיונות חוזרים על שגיאת שרת זמנית.
+
+    **למה בטוח לנסות שוב:** ה-SDK בונה את contents_to_model כרשימה
+    מקומית וקורא ל-record_history רק *אחרי* ש-generate_content חוזר
+    בהצלחה. קריאה שנכשלה לא השאירה את ההודעה בהיסטוריה, אז הניסיון
+    החוזר שולח אותה פעם אחת ולא פעמיים.
+
+    **כל ניסיון צורך טוקן מהתקציב** — זו באמת קריאה נוספת ל-Gemini,
+    ו-rate_limit.py מודד קצב מול ה-API ולא מספר שאלות. אם התקציב
+    מסרב, מפסיקים לנסות במקום לחרוג מהקצב.
+
+    ההמתנה מעריכית ומתחילה בשנייה (1, 2). התקרה נמוכה בכוונה: המשתמש
+    כבר ממתין בטלגרם, ועדיף להיכשל מהר מלהשאיר אותו תלוי.
+    """
+    for attempt in range(AGENT_RETRY_ATTEMPTS):
+        label = f"{purpose} [{attempt + 1}/{AGENT_RETRY_ATTEMPTS}]"
+        if not spend_gemini(label, timeout=20.0):
+            raise RuntimeError(f"Gemini rate budget exhausted before {purpose}")
+        try:
+            return chat.send_message(message)
+        except genai_errors.APIError as e:
+            is_last = attempt == AGENT_RETRY_ATTEMPTS - 1
+            if getattr(e, "code", None) not in GEMINI_RETRY_CODES or is_last:
+                raise
+            delay = AGENT_RETRY_BASE_SECONDS * (2 ** attempt)
+            logger.warning(
+                "%s failed with %s — retrying in %.0fs (attempt %d/%d)",
+                purpose, e.code, delay, attempt + 1, AGENT_RETRY_ATTEMPTS,
+            )
+            time.sleep(delay)
+    raise RuntimeError(f"{purpose}: retry loop ended without a result")
+
+
 async def agent_loop_mcp(
     task: str,
     server_params: StdioServerParameters = DEFAULT_SERVER_PARAMS,
@@ -167,9 +216,7 @@ async def agent_loop_mcp(
             # לתשובה, ו-20 שניות עדיפות על כשל. acquire חוסם, וזה
             # בסדר כאן — chat.send_message עצמה סינכרונית וחוסמת,
             # וה-event loop הזה מוקדש לשאלה הבודדת הזו בלבד.
-            if not spend_gemini("agent loop (opening)", timeout=20.0):
-                raise RuntimeError("Gemini rate budget exhausted before the agent could start")
-            response = chat.send_message(task)
+            response = _send_with_retry(chat, task, "agent loop (opening)")
 
             for i in range(max_iterations):
                 fn_calls = [
@@ -192,9 +239,7 @@ async def agent_loop_mcp(
                             name=fc.name, response={"result": parsed}
                         )
                     )
-                if not spend_gemini(f"agent loop (iteration {i})", timeout=20.0):
-                    raise RuntimeError("Gemini rate budget exhausted mid-conversation")
-                response = chat.send_message(results)
+                response = _send_with_retry(chat, results, f"agent loop (iteration {i})")
 
             raise RuntimeError(f"Agent exceeded {max_iterations} iterations")
 
